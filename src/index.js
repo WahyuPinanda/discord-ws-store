@@ -105,6 +105,11 @@ function memberIsStaff(member) {
     || staffRoleNames().some((roleName) => member.roles.cache.some((role) => role.name === roleName));
 }
 
+function memberIsOwner(member, userId) {
+  return userId === config.ownerDiscordId
+    || member.roles.cache.some((role) => role.name === ROLE.owner);
+}
+
 function pruneSpamTimestamps(timestamps, windowMs, now = Date.now()) {
   return timestamps.filter((timestamp) => now - timestamp <= windowMs);
 }
@@ -395,6 +400,14 @@ async function publishOrEditPanel(channel, type, payload) {
 }
 
 async function setupServer(interaction) {
+  if (!memberIsOwner(interaction.member, interaction.user.id)) {
+    await interaction.reply({
+      content: 'Hanya owner yang bisa menjalankan setup server.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
   const guild = interaction.guild;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
