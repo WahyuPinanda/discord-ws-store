@@ -7,3 +7,4 @@ pnpm-debug.log*
 *.local
 transcripts/
 gha-creds-*.json
+tmp/
