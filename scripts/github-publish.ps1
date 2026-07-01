@@ -16,7 +16,13 @@ if (-not (Test-Path ".git")) {
 }
 
 git add .
-git commit -m "Initial WS Store Discord bot with Cloud Run CI/CD"
+
+$changes = git status --porcelain
+if ($changes) {
+  git commit -m "Initial WS Store Discord bot with Cloud Run CI/CD"
+} else {
+  Write-Host "No local changes to commit."
+}
 
 $visibility = if ($Private) { "--private" } else { "--public" }
 gh repo create $RepoName $visibility --description $Description --source=. --remote=origin --push
