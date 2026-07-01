@@ -39,6 +39,18 @@ const TIER_ROLES = [
   { min: 1_000_000, name: '⭐ Customer 1Jt+' }
 ];
 
+const SPAM_SETTINGS = {
+  windowMs: 7_000,
+  maxMessages: 5,
+  rapidWindowMs: 2_500,
+  rapidMaxMessages: 5,
+  cleanupWindowMs: 15_000,
+  warningExpiresMs: 5 * 60_000,
+  timeoutMs: 5 * 60_000
+};
+
+const spamState = new Map();
+
 const CATEGORY = {
   stats: '📊 SERVER STATS',
   info: '📌 INFORMATION',
@@ -91,6 +103,75 @@ function staffRoleNames() {
 function memberIsStaff(member) {
   return member.permissions.has(PermissionFlagsBits.Administrator)
     || staffRoleNames().some((roleName) => member.roles.cache.some((role) => role.name === roleName));
+}
+
+function pruneSpamTimestamps(timestamps, windowMs, now = Date.now()) {
+  return timestamps.filter((timestamp) => now - timestamp <= windowMs);
+}
+
+function getSpamBucket(message) {
+  const key = `${message.guildId}:${message.author.id}`;
+  const now = Date.now();
+  const existing = spamState.get(key) || {
+    timestamps: [],
+    warnedAt: 0,
+    lastActionAt: 0
+  };
+
+  existing.timestamps = pruneSpamTimestamps(existing.timestamps, SPAM_SETTINGS.windowMs, now);
+  existing.timestamps.push(now);
+  spamState.set(key, existing);
+
+  return existing;
+}
+
+async function deleteRecentSpamMessages(message) {
+  if (!message.channel?.messages?.fetch) return;
+
+  const since = Date.now() - SPAM_SETTINGS.cleanupWindowMs;
+  const fetched = await message.channel.messages.fetch({ limit: 50 }).catch(() => null);
+  if (!fetched) return;
+
+  const spamMessages = fetched.filter((item) =>
+    item.author.id === message.author.id
+    && item.createdTimestamp >= since
+    && item.deletable
+  );
+
+  if (!spamMessages.size) return;
+
+  if (message.channel.bulkDelete) {
+    await message.channel.bulkDelete(spamMessages, true).catch(async () => {
+      await Promise.all([...spamMessages.values()].map((item) => item.delete().catch(() => null)));
+    });
+    return;
+  }
+
+  await Promise.all([...spamMessages.values()].map((item) => item.delete().catch(() => null)));
+}
+
+async function sendSpamNotice(message, description) {
+  const warning = await message.channel.send({
+    content: `<@${message.author.id}> ${description}`
+  }).catch(() => null);
+
+  if (warning) {
+    setTimeout(() => warning.delete().catch(() => null), 12_000).unref();
+  }
+}
+
+async function timeoutForSpam(message, reason) {
+  const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+
+  await deleteRecentSpamMessages(message);
+
+  if (member?.moderatable) {
+    await member.timeout(SPAM_SETTINGS.timeoutMs, reason).catch(() => null);
+    await sendSpamNotice(message, `kamu terkena timeout 5 menit karena spam. Alasan: ${reason}`);
+    return;
+  }
+
+  await sendSpamNotice(message, 'spam terdeteksi dan pesan sudah dihapus, tetapi bot tidak bisa memberi timeout pada role kamu.');
 }
 
 function ticketTypeLabel(type) {
@@ -1035,6 +1116,46 @@ async function showCustomer(interaction) {
     flags: MessageFlags.Ephemeral
   });
 }
+
+client.on('messageCreate', async (message) => {
+  try {
+    if (!message.guild || message.author.bot || !message.member) return;
+    if (memberIsStaff(message.member)) return;
+
+    const now = Date.now();
+    const bucket = getSpamBucket(message);
+    const rapidCount = pruneSpamTimestamps(bucket.timestamps, SPAM_SETTINGS.rapidWindowMs, now).length;
+    const normalCount = bucket.timestamps.length;
+    const hasActiveWarning = bucket.warnedAt && now - bucket.warnedAt <= SPAM_SETTINGS.warningExpiresMs;
+    const actionCooldown = now - bucket.lastActionAt < 5_000;
+
+    if (actionCooldown) return;
+
+    if (rapidCount >= SPAM_SETTINGS.rapidMaxMessages) {
+      bucket.lastActionAt = now;
+      bucket.timestamps = [];
+      await timeoutForSpam(message, 'spam terlalu cepat');
+      return;
+    }
+
+    if (normalCount >= SPAM_SETTINGS.maxMessages) {
+      bucket.lastActionAt = now;
+      bucket.timestamps = [];
+
+      if (hasActiveWarning) {
+        await timeoutForSpam(message, 'mengulang spam setelah peringatan');
+        bucket.warnedAt = 0;
+        return;
+      }
+
+      bucket.warnedAt = now;
+      await deleteRecentSpamMessages(message);
+      await sendSpamNotice(message, 'jangan spam. Ini peringatan pertama. Jika mengulang, kamu akan terkena timeout 5 menit.');
+    }
+  } catch (error) {
+    console.warn('Anti-spam handler failed:', error.message);
+  }
+});
 
 client.on('guildMemberAdd', async (member) => {
   const role = member.guild.roles.cache.find((item) => item.name === ROLE.unverified);
