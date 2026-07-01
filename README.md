@@ -194,6 +194,15 @@ Di Google Cloud, ambil:
 
 Lalu jalankan:
 
+Cloud Shell / Linux:
+
+```bash
+chmod +x scripts/gcp-bootstrap.sh
+./scripts/gcp-bootstrap.sh
+```
+
+Windows PowerShell:
+
 ```powershell
 .\scripts\gcp-bootstrap.ps1 `
   -ProjectId "your-gcp-project-id" `
