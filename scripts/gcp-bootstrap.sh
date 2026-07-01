@@ -44,6 +44,20 @@ if ! gcloud iam service-accounts describe "$DEPLOY_SA_EMAIL" >/dev/null 2>&1; th
     --display-name="GitHub Cloud Run deployer"
 fi
 
+echo "Waiting for deploy service account to become available..."
+for attempt in {1..12}; do
+  if gcloud iam service-accounts describe "$DEPLOY_SA_EMAIL" >/dev/null 2>&1; then
+    break
+  fi
+
+  if [[ "$attempt" == "12" ]]; then
+    echo "Service account is still not visible: $DEPLOY_SA_EMAIL" >&2
+    exit 1
+  fi
+
+  sleep 5
+done
+
 echo "Granting deploy permissions..."
 for role in \
   roles/run.admin \
@@ -53,8 +67,7 @@ for role in \
 do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:$DEPLOY_SA_EMAIL" \
-    --role="$role" \
-    --condition=None >/dev/null
+    --role="$role" >/dev/null
 done
 
 echo "Creating Secret Manager secrets if missing..."

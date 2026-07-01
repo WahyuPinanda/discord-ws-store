@@ -50,6 +50,20 @@ if (-not $deploySaExists) {
     --display-name="GitHub Cloud Run deployer"
 }
 
+Write-Host "Waiting for deploy service account to become available..."
+for ($attempt = 1; $attempt -le 12; $attempt++) {
+  $deploySaReady = gcloud iam service-accounts describe $deploySaEmail 2>$null
+  if ($deploySaReady) {
+    break
+  }
+
+  if ($attempt -eq 12) {
+    throw "Service account is still not visible: $deploySaEmail"
+  }
+
+  Start-Sleep -Seconds 5
+}
+
 Write-Host "Granting deploy permissions..."
 $roles = @(
   "roles/run.admin",
@@ -61,8 +75,7 @@ $roles = @(
 foreach ($role in $roles) {
   gcloud projects add-iam-policy-binding $ProjectId `
     --member="serviceAccount:$deploySaEmail" `
-    --role=$role `
-    --condition=None
+    --role=$role
 }
 
 Write-Host "Creating Secret Manager secrets if missing..."
