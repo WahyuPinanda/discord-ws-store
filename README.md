@@ -1,0 +1,264 @@
+# WS Store Official Discord Bot
+
+Bot full custom untuk server Discord **WS Store Official**.
+
+Fitur utama:
+
+- Verify member baru: `Unverified` -> `Client`
+- Auto role untuk customer dan tier transaksi: `1Jt+`, `5Jt+`, `10Jt+`, `20Jt+`, `50Jt+`
+- Ticket order, rekber, dan support
+- Tombol claim, payment QRIS, complete order, close ticket
+- Invoice otomatis ke DM pembeli setelah order selesai
+- Vouch / transaction otomatis ke channel `✅・success-transaction`
+- Transcript ticket HTML otomatis
+- Supabase database
+- Supabase heartbeat harian agar database tetap aktif selama bot hidup
+- Jam operasional 10.00-22.00 WITA, tombol ticket otomatis disabled di luar jam itu
+
+## 1. Setup Supabase
+
+1. Buka project Supabase.
+2. Masuk ke **SQL Editor**.
+3. Jalankan isi file:
+
+```txt
+supabase/schema.sql
+```
+
+4. Ambil:
+   - `Project URL`
+   - `Secret key` untuk server-side
+   - kalau dashboard kamu masih legacy, gunakan `service_role key`
+
+Gunakan `Secret key` / `service_role key` hanya di server bot. Jangan upload ke GitHub publik.
+
+## 2. Setup Discord Bot
+
+Di Discord Developer Portal:
+
+1. Buat Application.
+2. Buat Bot.
+3. Aktifkan privileged intents:
+   - Server Members Intent
+   - Message Content Intent
+4. Copy token bot.
+5. Invite bot ke server dengan permission:
+   - Administrator paling mudah untuk setup awal
+   - Setelah server rapi, permission bisa dipersempit
+
+## 3. Env
+
+Copy file:
+
+```bash
+cp .env.example .env
+```
+
+Isi `.env`:
+
+```env
+DISCORD_TOKEN=token_bot
+DISCORD_CLIENT_ID=application_client_id
+DISCORD_GUILD_ID=id_server
+
+SUPABASE_URL=https://project-id.supabase.co
+SUPABASE_SECRET_KEY=secret_key_supabase
+# atau untuk legacy:
+# SUPABASE_SERVICE_ROLE_KEY=service_role_key
+
+OWNER_DISCORD_ID=id_owner
+
+STORE_NAME=WS Store Official
+STORE_TIMEZONE=Asia/Makassar
+STORE_OPEN_HOUR=10
+STORE_CLOSE_HOUR=22
+
+QRIS_IMAGE_PATH=assets/qris-ws-store.png
+```
+
+## 4. Install dan Jalankan
+
+```bash
+npm install
+npm run deploy:commands
+npm start
+```
+
+Setelah bot online, buka Discord dan jalankan:
+
+```txt
+/setup-server
+```
+
+Command itu akan membuat role, kategori, channel, panel verify, panel ticket, dan panel payment QRIS.
+
+## 5. Alur Order
+
+1. Buyer klik ticket order saat jam operasional.
+2. Bot membuat channel `ticket-xxx`.
+3. Admin klik `Claim Ticket`.
+4. Buyer klik `Payment QRIS` atau lihat channel payment.
+5. Setelah order selesai, admin klik `Order Selesai`.
+6. Admin isi modal:
+   - Produk
+   - Nominal rupiah
+   - Payment
+   - Catatan
+7. Bot otomatis:
+   - simpan transaksi ke Supabase
+   - update total belanja buyer
+   - kasih role `Customer`
+   - kasih tier sesuai total transaksi
+   - kirim invoice ke DM buyer
+   - kirim transaksi ke `✅・success-transaction`
+   - simpan transcript HTML
+   - tutup ticket
+
+## 6. Jam Operasional
+
+Default:
+
+```txt
+10.00-22.00 Asia/Makassar
+```
+
+Di luar jam ini:
+
+- tombol ticket otomatis disabled
+- kalau ada tombol lama yang masih bisa diklik, bot tetap menolak pembuatan ticket
+
+Panel ticket direfresh setiap 1 menit.
+
+## 7. Supabase Free Keep Alive
+
+Bot menjalankan heartbeat setiap 24 jam ke tabel `bot_heartbeat`.
+
+Penting: heartbeat hanya berjalan kalau bot hidup. Kalau bot dimatikan, VPS mati, atau hosting sleep, Supabase tidak akan menerima load harian.
+
+## 8. Command Admin
+
+```txt
+/setup-server
+/refresh-panels
+/add-transaction buyer:@user amount:1000000 product:Robux payment:QRIS
+/customer user:@user
+```
+
+`/add-transaction` berguna untuk transaksi manual di luar ticket.
+
+## 9. QRIS
+
+File QRIS sudah disimpan di:
+
+```txt
+assets/qris-ws-store.png
+```
+
+Kalau QRIS berubah, cukup ganti file tersebut dengan nama yang sama, lalu restart bot.
+
+## 10. Deploy ke Google Cloud Run dengan CI/CD GitHub
+
+Bot ini sudah disiapkan untuk Cloud Run:
+
+- `Dockerfile`
+- `.github/workflows/deploy-cloud-run.yml`
+- `scripts/gcp-bootstrap.ps1`
+- `scripts/github-publish.ps1`
+- health endpoint `/healthz`
+
+Cloud Run perlu diset dengan:
+
+- `min-instances=1`
+- `max-instances=1`
+- `no-cpu-throttling`
+- memory minimal `512Mi`
+
+Ini penting karena bot Discord harus menjaga koneksi WebSocket tetap hidup.
+
+### 10.1 Buat GitHub repo
+
+Kalau GitHub CLI sudah login:
+
+```powershell
+.\scripts\github-publish.ps1 -RepoName ws-store-official-bot -Private
+```
+
+Kalau ingin public, hapus `-Private`.
+
+### 10.2 Bootstrap GCP
+
+Di Google Cloud, ambil:
+
+- `Project ID`
+- `Project Number`
+
+Lalu jalankan:
+
+```powershell
+.\scripts\gcp-bootstrap.ps1 `
+  -ProjectId "your-gcp-project-id" `
+  -ProjectNumber "123456789012" `
+  -GitHubOwner "github-username-kamu" `
+  -GitHubRepo "ws-store-official-bot"
+```
+
+Script ini akan:
+
+- enable API yang dibutuhkan
+- buat Artifact Registry Docker repo
+- buat service account deploy
+- buat Secret Manager secret kosong:
+  - `discord-token`
+  - `supabase-secret-key`
+- setup Workload Identity Federation untuk GitHub Actions
+
+### 10.3 Isi Secret Manager
+
+Buat file sementara di komputer kamu, misalnya:
+
+```txt
+discord-token.txt
+supabase-secret-key.txt
+```
+
+Lalu upload ke Secret Manager:
+
+```powershell
+gcloud secrets versions add discord-token --data-file=discord-token.txt
+gcloud secrets versions add supabase-secret-key --data-file=supabase-secret-key.txt
+```
+
+Setelah selesai, hapus file txt tersebut dari komputer kamu.
+
+### 10.4 Isi GitHub Variables
+
+Masuk ke repo GitHub:
+
+`Settings` -> `Secrets and variables` -> `Actions` -> `Variables`
+
+Tambahkan:
+
+```txt
+GCP_PROJECT_ID
+GCP_REGION
+CLOUD_RUN_SERVICE
+ARTIFACT_REPOSITORY
+GCP_WORKLOAD_IDENTITY_PROVIDER
+GCP_DEPLOY_SERVICE_ACCOUNT
+DISCORD_CLIENT_ID
+DISCORD_GUILD_ID
+OWNER_DISCORD_ID
+SUPABASE_URL
+```
+
+Nilainya akan dicetak oleh `scripts/gcp-bootstrap.ps1`, kecuali data Discord dan Supabase yang kamu isi sendiri.
+
+### 10.5 Deploy otomatis
+
+Setiap push ke branch `main`, GitHub Actions akan:
+
+1. build Docker image
+2. push ke Artifact Registry
+3. deploy ke Cloud Run
+4. inject secret dari Secret Manager
+5. set Cloud Run supaya bot tetap hidup

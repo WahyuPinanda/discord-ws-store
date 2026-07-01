@@ -1,0 +1,20 @@
+{
+  "name": "ws-store-official-bot",
+  "version": "1.0.0",
+  "description": "Full custom Discord bot untuk WS Store Official dengan ticket, invoice, QRIS, Supabase, dan jam operasional.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "deploy:commands": "node src/deploy-commands.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
