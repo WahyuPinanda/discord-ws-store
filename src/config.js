@@ -27,7 +27,8 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseServiceRoleKey: supabaseSecretKey,
   storeName: process.env.STORE_NAME || 'WS Store Official',
-  timezone: process.env.STORE_TIMEZONE || 'Asia/Makassar',
+  timezone: process.env.STORE_TIMEZONE || 'Asia/Jakarta',
+  timezoneLabel: process.env.STORE_TIMEZONE_LABEL || 'WIB',
   openHour: Number(process.env.STORE_OPEN_HOUR || 10),
   closeHour: Number(process.env.STORE_CLOSE_HOUR || 22),
   qrisImagePath: process.env.QRIS_IMAGE_PATH || 'assets/qris-ws-store.png'

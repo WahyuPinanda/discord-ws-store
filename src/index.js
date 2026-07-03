@@ -145,7 +145,7 @@ function ticketTypeLabel(type) {
 }
 
 function ticketOpenButton(type) {
-  const available = isStoreOpen() && serviceIsOpen(config.guildId, type);
+  const available = type === 'rekber' || (isStoreOpen() && serviceIsOpen(config.guildId, type));
   const labels = {
     order: 'Buka Ticket Order',
     rekber: 'Buka Ticket Rekber',
@@ -163,15 +163,18 @@ function ticketOpenButton(type) {
 function ticketPanelPayload(type) {
   const description = {
     order: 'Klik tombol di bawah untuk membeli produk WS Store. Ticket hanya dapat dibuka saat jam operasional.',
-    rekber: 'Gunakan ticket ini untuk jasa middleman / rekber agar transaksi lebih aman.',
+    rekber: 'Gunakan ticket ini untuk jasa middleman / rekber agar transaksi lebih aman.\n\n**Catatan:** Ticket rekber selalu bisa dibuka, tetapi proses akan dibantu selagi admin / middleman sedang online.',
     support: 'Gunakan ticket ini untuk pertanyaan, kendala order, atau bantuan umum.'
   };
+  const statusText = type === 'rekber'
+    ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
+    : operatingStatusText();
 
   return {
     embeds: [
       embedBase()
         .setTitle(`🎟️ ${ticketTypeLabel(type)}`)
-        .setDescription(`${description[type]}\n\n${operatingStatusText()}`)
+        .setDescription(`${description[type]}\n\n${statusText}`)
     ],
     components: [new ActionRowBuilder().addComponents(ticketOpenButton(type))]
   };
@@ -740,7 +743,9 @@ async function handleVerify(interaction) {
 }
 
 async function createTicket(interaction, type) {
-  if (!isStoreOpen()) {
+  const isAlwaysOpenRekber = type === 'rekber';
+
+  if (!isAlwaysOpenRekber && !isStoreOpen()) {
     await interaction.reply({
       content: `Store sedang closed. ${operatingStatusText()}`,
       flags: MessageFlags.Ephemeral
@@ -748,7 +753,7 @@ async function createTicket(interaction, type) {
     return;
   }
 
-  if (!serviceIsOpen(interaction.guildId, type)) {
+  if (!isAlwaysOpenRekber && !serviceIsOpen(interaction.guildId, type)) {
     await interaction.reply({
       content: `${ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`,
       flags: MessageFlags.Ephemeral
@@ -1301,6 +1306,13 @@ async function handleServiceStatusCommand(interaction, isOpen) {
 
   const service = interaction.options.getSubcommand();
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  if (service === 'rekber') {
+    await updateServiceStatus(interaction.guild, service, true, interaction.user.id);
+    await interaction.editReply('Ticket rekber dibuat selalu OPEN. Proses tetap dibantu selagi admin / middleman sedang online.');
+    return;
+  }
+
   await updateServiceStatus(interaction.guild, service, isOpen, interaction.user.id);
 
   const label = SERVICE_DEFINITIONS[service].statsLabel;

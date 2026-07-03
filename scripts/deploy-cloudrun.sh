@@ -44,7 +44,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --cpu 1 \
   --port 8080 \
   --service-account "${RUN_SERVICE_ACCOUNT}" \
-  --set-env-vars "DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID},DISCORD_GUILD_ID=${DISCORD_GUILD_ID},OWNER_DISCORD_ID=${OWNER_DISCORD_ID},STORE_NAME=WS Store Official,STORE_TIMEZONE=Asia/Makassar,STORE_OPEN_HOUR=10,STORE_CLOSE_HOUR=22,QRIS_IMAGE_PATH=assets/qris-ws-store.png,SUPABASE_URL=${SUPABASE_URL}" \
+  --set-env-vars "DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID},DISCORD_GUILD_ID=${DISCORD_GUILD_ID},OWNER_DISCORD_ID=${OWNER_DISCORD_ID},STORE_NAME=WS Store Official,STORE_TIMEZONE=Asia/Jakarta,STORE_TIMEZONE_LABEL=WIB,STORE_OPEN_HOUR=10,STORE_CLOSE_HOUR=22,QRIS_IMAGE_PATH=assets/qris-ws-store.png,SUPABASE_URL=${SUPABASE_URL}" \
   --set-secrets "DISCORD_TOKEN=discord-token:latest,SUPABASE_SECRET_KEY=supabase-secret-key:latest"
 
 echo "Deploying slash commands..."

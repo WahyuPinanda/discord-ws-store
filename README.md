@@ -69,7 +69,8 @@ SUPABASE_SECRET_KEY=secret_key_supabase
 OWNER_DISCORD_ID=id_owner
 
 STORE_NAME=WS Store Official
-STORE_TIMEZONE=Asia/Makassar
+STORE_TIMEZONE=Asia/Jakarta
+STORE_TIMEZONE_LABEL=WIB
 STORE_OPEN_HOUR=10
 STORE_CLOSE_HOUR=22
 
@@ -119,13 +120,14 @@ Command itu akan membuat role, kategori, channel, panel verify, panel ticket, da
 Default:
 
 ```txt
-10.00-22.00 Asia/Makassar
+10.00-22.00 WIB
 ```
 
 Di luar jam ini:
 
-- tombol ticket otomatis disabled
+- tombol ticket order dan support otomatis disabled
 - kalau ada tombol lama yang masih bisa diklik, bot tetap menolak pembuatan ticket
+- ticket rekber tetap bisa dibuka, tetapi proses dibantu selagi admin / middleman sedang online
 
 Panel ticket direfresh setiap 1 menit.
 

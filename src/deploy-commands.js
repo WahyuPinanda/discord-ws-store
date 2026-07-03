@@ -4,7 +4,6 @@ import { config } from './config.js';
 
 const serviceCommands = [
   ['order', 'Ticket order'],
-  ['rekber', 'Ticket rekber / middleman'],
   ['support', 'Ticket support'],
   ['limited', 'Limited item'],
   ['via-login', 'Via login'],

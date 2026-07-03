@@ -18,7 +18,7 @@ export function isStoreOpen(date = new Date()) {
 
 export function operatingStatusText(date = new Date()) {
   const status = isStoreOpen(date) ? 'OPEN' : 'CLOSED';
-  return `${status} | Jam operasional ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezone}`;
+  return `${status} | Jam operasional ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`;
 }
 
 export function formatRupiah(value) {
