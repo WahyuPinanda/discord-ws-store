@@ -1670,6 +1670,7 @@ function giveawayPayload(guild, giveaway, participantCount, winners = []) {
       embedBase()
         .setTitle(giveaway.prize)
         .setDescription([
+          `• Giveaway ID: ${giveaway.id}`,
           `• Hosted by: <@${giveaway.host_id}>`,
           `• Ended at: ${time(endsAt, TimestampStyles.ShortDateTime)} (${time(endsAt, TimestampStyles.RelativeTime)})`,
           `• Winners: ${giveaway.winners_count}`,
