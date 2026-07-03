@@ -50,38 +50,50 @@ const SPAM_SETTINGS = {
 };
 
 const spamState = new Map();
+const inviteCache = new Map();
 
 const SERVICE_DEFINITIONS = {
   order: {
     label: 'ORDER',
     statsLabel: 'Ticket Order',
-    panelType: 'ticket_order'
+    panelType: 'ticket_order',
+    showInStats: false
   },
   rekber: {
     label: 'REKBER',
     statsLabel: 'Ticket Rekber',
-    panelType: 'ticket_rekber'
+    panelType: 'ticket_rekber',
+    showInStats: false
   },
   support: {
     label: 'SUPPORT',
     statsLabel: 'Ticket Support',
-    panelType: 'ticket_support'
+    panelType: 'ticket_support',
+    showInStats: false
   },
   limited: {
     label: 'LIMITED',
-    statsLabel: 'Limited Item'
+    statsLabel: 'LIMITED',
+    statsEmoji: '💎',
+    showInStats: true
   },
   'via-login': {
     label: 'VIA LOGIN',
-    statsLabel: 'Via Login'
+    statsLabel: 'VIA LOGIN',
+    statsEmoji: '🧁',
+    showInStats: true
   },
   'group-payout': {
     label: 'GROUP PAYOUT',
-    statsLabel: 'Group Payout'
+    statsLabel: 'Grup Payout',
+    statsEmoji: '💳',
+    showInStats: true
   },
   'gift-gamepass': {
     label: 'GIFT GAMEPASS',
-    statsLabel: 'Gift Gamepass'
+    statsLabel: 'GIFT GAMEPASS',
+    statsEmoji: '🎮',
+    showInStats: true
   }
 };
 
@@ -89,7 +101,8 @@ const TICKET_SERVICE_TYPES = new Set(['order', 'rekber', 'support']);
 const serviceStatusCache = new Map();
 
 const CATEGORY = {
-  stats: '📊 SERVER STATS',
+  stats: '📊 SERVER STATS 📊',
+  gate: '👋 VIBE GATE',
   info: '📌 INFORMATION',
   market: '💎 MARKET & PRICE',
   ticket: '🎟️ ORDER / BERTANYA DISINI',
@@ -102,6 +115,7 @@ const CATEGORY = {
 
 const CHANNEL = {
   verify: '✅・verify',
+  welcome: '👋・welcome',
   rules: '📜・rules',
   howToOrder: '📌・how-to-order',
   payment: '💳・payment-method',
@@ -118,6 +132,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildInvites,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages
@@ -186,9 +201,13 @@ async function loadServiceStatuses(guildId) {
 }
 
 function statusChannelName(service, isOpen) {
+  const definition = SERVICE_DEFINITIONS[service];
   const statusIcon = isOpen ? '🟢' : '🔴';
-  const statusText = isOpen ? 'OPEN' : 'CLOSED';
-  return `${statusIcon}・${SERVICE_DEFINITIONS[service].statsLabel} : ${statusText}`;
+  return `${definition.statsEmoji || statusIcon}・${definition.statsLabel} : ${statusIcon}`;
+}
+
+function serviceStatusNameKeys(definition) {
+  return [...new Set([definition.statsLabel, definition.label].filter(Boolean).map((item) => channelNameKey(item)))];
 }
 
 async function updateServiceStatus(guild, service, isOpen, updatedBy) {
@@ -446,7 +465,11 @@ async function ensureCategory(guild, name, permissionOverwrites = []) {
   const existing = guild.channels.cache.find(
     (channel) => channel.type === ChannelType.GuildCategory && channelMatchesName(channel, name)
   );
-  if (existing) return existing;
+  if (existing) {
+    if (existing.name !== name) await existing.setName(name).catch(() => null);
+    if (permissionOverwrites.length) await existing.permissionOverwrites.set(permissionOverwrites).catch(() => null);
+    return existing;
+  }
 
   return guild.channels.create({
     name,
@@ -536,6 +559,81 @@ async function deleteChannelByName(guild, name) {
   }
 }
 
+async function deleteChannel(channel, reason) {
+  if (channel?.deletable) await channel.delete(reason).catch(() => null);
+}
+
+async function refreshInviteCache(guild) {
+  const invites = await guild.invites.fetch().catch((error) => {
+    console.warn(`Invite cache refresh failed for ${guild.name}:`, error.message);
+    return null;
+  });
+
+  if (!invites) return null;
+
+  inviteCache.set(
+    guild.id,
+    new Map(invites.map((invite) => [
+      invite.code,
+      {
+        uses: invite.uses || 0,
+        inviterId: invite.inviterId,
+        inviterTag: invite.inviter?.tag || invite.inviter?.username || 'Unknown'
+      }
+    ]))
+  );
+
+  return invites;
+}
+
+async function detectUsedInvite(guild) {
+  const previous = inviteCache.get(guild.id) || new Map();
+  const invites = await guild.invites.fetch().catch((error) => {
+    console.warn(`Invite detect failed for ${guild.name}:`, error.message);
+    return null;
+  });
+
+  if (!invites) return null;
+
+  let usedInvite = null;
+  for (const invite of invites.values()) {
+    const oldUses = previous.get(invite.code)?.uses || 0;
+    const newUses = invite.uses || 0;
+    if (newUses > oldUses) {
+      usedInvite = invite;
+      break;
+    }
+  }
+
+  inviteCache.set(
+    guild.id,
+    new Map(invites.map((invite) => [
+      invite.code,
+      {
+        uses: invite.uses || 0,
+        inviterId: invite.inviterId,
+        inviterTag: invite.inviter?.tag || invite.inviter?.username || 'Unknown'
+      }
+    ]))
+  );
+
+  return usedInvite;
+}
+
+async function sendWelcomeInviteLog(member, invite) {
+  const channel = member.guild.channels.cache.find((item) => channelMatchesName(item, CHANNEL.welcome));
+  if (!channel) return;
+
+  const invitedBy = invite?.inviter
+    ? `<@${invite.inviter.id}>`
+    : 'Unknown';
+  const uses = invite?.uses || 0;
+
+  await channel.send({
+    content: `<@${member.id}> has been invited by ${invitedBy} and has now ${uses} invite${uses === 1 ? '' : 's'}.`
+  }).catch(() => null);
+}
+
 async function upsertPanel(type, message) {
   await supabase.from('ticket_panels').upsert({
     guild_id: message.guildId,
@@ -594,12 +692,30 @@ async function refreshServerStats(guild) {
 
   for (const service of Object.keys(SERVICE_DEFINITIONS)) {
     const definition = SERVICE_DEFINITIONS[service];
-    const serviceNameKey = channelNameKey(definition.statsLabel);
+    if (definition.showInStats) continue;
+
+    const serviceNameKeys = serviceStatusNameKeys(definition);
+    const staleChannels = guild.channels.cache.filter((channel) =>
+      channel.type === ChannelType.GuildText
+      && channel.parentId === statsCategory.id
+      && serviceNameKeys.some((serviceNameKey) => channelNameKey(channel.name).includes(serviceNameKey))
+    );
+
+    for (const channel of staleChannels.values()) {
+      await deleteChannel(channel, `Removed hidden WS Store status channel: ${definition.statsLabel}`);
+    }
+  }
+
+  for (const service of Object.keys(SERVICE_DEFINITIONS)) {
+    const definition = SERVICE_DEFINITIONS[service];
+    if (!definition.showInStats) continue;
+
+    const serviceNameKeys = serviceStatusNameKeys(definition);
     const candidates = [...guild.channels.cache.values()]
       .filter((channel) =>
         channel.type === ChannelType.GuildText
         && channel.parentId === statsCategory.id
-        && channelNameKey(channel.name).includes(serviceNameKey)
+        && serviceNameKeys.some((serviceNameKey) => channelNameKey(channel.name).includes(serviceNameKey))
       )
       .sort((left, right) => (left.rawPosition ?? left.position ?? 0) - (right.rawPosition ?? right.position ?? 0));
     const desiredName = statusChannelName(service, serviceIsOpen(guild.id, service));
@@ -684,6 +800,13 @@ async function setupServer(interaction) {
     { id: adminRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak] }
   ];
 
+  const welcomeReadOnly = [
+    { id: everyone.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
+    { id: clientRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
+    ...staffAllow
+  ];
+
+  const gateCategory = await ensureCategory(guild, CATEGORY.gate, welcomeReadOnly);
   const infoCategory = await ensureCategory(guild, CATEGORY.info, publicReadOnly);
   const marketCategory = await ensureCategory(guild, CATEGORY.market, publicReadOnly);
   const ticketCategory = await ensureCategory(guild, CATEGORY.ticket, publicReadOnly);
@@ -705,6 +828,7 @@ async function setupServer(interaction) {
   await deleteChannelByName(guild, CHANNEL.payment);
   await deleteChannelByName(guild, '⚙️・setting-room-voice');
 
+  await ensureTextChannel(guild, CHANNEL.welcome, gateCategory, welcomeReadOnly);
   const verifyChannel = await ensureTextChannel(guild, CHANNEL.verify, infoCategory, [
     { id: everyone.id, deny: [PermissionsBitField.Flags.SendMessages], allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] },
     { id: unverifiedRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
@@ -741,10 +865,10 @@ async function setupServer(interaction) {
   await ensureVoiceChannel(guild, 'Room 1', communityCategory, publicVoice);
 
   await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, publicReadOnly);
-  await ensureTextChannel(guild, CHANNEL.ticketTranscript, transactionCategory, publicReadOnly);
   await ensureTextChannel(guild, '🧾・rekber-history', transactionCategory, publicReadOnly);
   await ensureTextChannel(guild, CHANNEL.adminLog, adminCategory);
   await ensureTextChannel(guild, CHANNEL.ticketLog, adminCategory);
+  await ensureTextChannel(guild, CHANNEL.ticketTranscript, adminCategory, staffOnly);
   await ensureTextChannel(guild, '💰・order-log', adminCategory);
   await ensureTextChannel(guild, '🚨・mod-log', adminCategory);
 
@@ -782,7 +906,7 @@ async function setupServer(interaction) {
     ]
   });
 
-  await interaction.editReply('Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, dan panel sudah dibuat.');
+  await interaction.editReply('Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, welcome invite tracker, dan admin transcript sudah dibuat.');
 }
 
 async function refreshPanels(guild) {
@@ -1052,11 +1176,7 @@ async function updateCustomerAndRoles(guild, buyerId, buyerTag, amount) {
   return { totalSpent, tier };
 }
 
-async function sendInvoiceDm({ user, transaction, totalSpent, tier, transcript }) {
-  const file = transcript
-    ? new AttachmentBuilder(Buffer.from(transcript.html), { name: transcript.fileName })
-    : null;
-
+async function sendInvoiceDm({ user, transaction, totalSpent, tier }) {
   const payload = {
     embeds: [
       embedBase()
@@ -1071,15 +1191,14 @@ async function sendInvoiceDm({ user, transaction, totalSpent, tier, transcript }
           { name: 'Tier', value: tier?.name || 'Belum masuk tier', inline: true }
         )
         .setTimestamp(new Date(transaction.created_at))
-    ],
-    files: file ? [file] : []
+    ]
   };
 
   await user.send(payload).catch(() => null);
 }
 
 async function postTransaction(guild, transaction, buyerId, totalSpent, tier) {
-  const channel = guild.channels.cache.find((item) => item.name === CHANNEL.successTransaction);
+  const channel = guild.channels.cache.find((item) => channelMatchesName(item, CHANNEL.successTransaction));
   if (!channel) return;
 
   await channel.send({
@@ -1175,8 +1294,8 @@ async function buildTranscript(channel, ticket) {
 }
 
 async function sendTranscriptLog(guild, ticket, transcript, closedBy) {
-  const channel = guild.channels.cache.find((item) => item.name === CHANNEL.ticketTranscript)
-    || guild.channels.cache.find((item) => item.name === CHANNEL.ticketLog);
+  const channel = guild.channels.cache.find((item) => channelMatchesName(item, CHANNEL.ticketTranscript))
+    || guild.channels.cache.find((item) => channelMatchesName(item, CHANNEL.ticketLog));
   if (!channel) return;
 
   await channel.send({
@@ -1209,8 +1328,7 @@ async function closeTicketChannel(channel, ticket, closedBy, options = {}) {
             { name: 'Ticket', value: `#${ticket.id}`, inline: true },
             { name: 'Closed by', value: `<@${closedBy}>`, inline: true }
           )
-      ],
-      files: [new AttachmentBuilder(Buffer.from(transcript.html), { name: transcript.fileName })]
+      ]
     }).catch(() => null);
   }
 
@@ -1286,7 +1404,7 @@ async function completeTicket(interaction) {
   });
 
   const transcript = await buildTranscript(interaction.channel, ticket);
-  await sendInvoiceDm({ user: buyer, transaction, totalSpent, tier, transcript });
+  await sendInvoiceDm({ user: buyer, transaction, totalSpent, tier });
   await sendTranscriptLog(interaction.guild, ticket, transcript, interaction.user.id);
 
   await supabase
@@ -1436,6 +1554,17 @@ client.on('messageCreate', async (message) => {
 client.on('guildMemberAdd', async (member) => {
   const role = member.guild.roles.cache.find((item) => item.name === ROLE.unverified);
   if (role) await member.roles.add(role).catch(() => null);
+
+  const usedInvite = await detectUsedInvite(member.guild);
+  await sendWelcomeInviteLog(member, usedInvite);
+});
+
+client.on('inviteCreate', async (invite) => {
+  if (invite.guild) await refreshInviteCache(invite.guild);
+});
+
+client.on('inviteDelete', async (invite) => {
+  if (invite.guild) await refreshInviteCache(invite.guild);
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -1486,6 +1615,7 @@ client.once('ready', async () => {
   const guild = await client.guilds.fetch(config.guildId).catch(() => null);
   if (guild) {
     await loadServiceStatuses(guild.id).catch((error) => console.warn('Service status load failed:', error.message));
+    await refreshInviteCache(guild).catch((error) => console.warn('Invite cache refresh failed:', error.message));
     await refreshServerStats(guild).catch((error) => console.warn('Server stats refresh failed:', error.message));
     await refreshPanels(guild).catch((error) => console.warn('Panel refresh failed:', error.message));
   }
