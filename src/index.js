@@ -661,6 +661,7 @@ async function setupServer(interaction) {
 
   const guild = interaction.guild;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await interaction.editReply('Setup server sedang diproses. Bot sedang merapikan role, permission, channel, dan panel...');
 
   const ownerRole = await ensureRole(guild, ROLE.owner, { color: 0xf1c40f, hoist: true });
   const adminRole = await ensureRole(guild, ROLE.admin, {

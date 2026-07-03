@@ -16,6 +16,26 @@ export const GIVEAWAY_ENTRY_ROLES = [
   { role: '✅ Client', entries: 1 }
 ];
 
+let giveawaySchemaWarningShown = false;
+
+function isGiveawaySchemaMissing(error) {
+  const message = error?.message || '';
+  return error?.code === 'PGRST205'
+    || message.includes("Could not find the table 'public.giveaways'")
+    || message.includes("Could not find the table 'public.giveaway_entries'")
+    || message.includes('schema cache');
+}
+
+function missingGiveawaySchemaMessage() {
+  return 'Tabel giveaway belum ada di Supabase. Jalankan isi file supabase/schema.sql di SQL Editor Supabase, lalu coba lagi.';
+}
+
+function warnMissingGiveawaySchemaOnce(error) {
+  if (giveawaySchemaWarningShown) return;
+  giveawaySchemaWarningShown = true;
+  console.warn(`${missingGiveawaySchemaMessage()} Detail: ${error.message}`);
+}
+
 function parseDurationMs(value) {
   const match = String(value || '').trim().toLowerCase().match(/^(\d+)\s*(m|h|d)$/);
   if (!match) return null;
@@ -88,10 +108,16 @@ export function createGiveawayFeature({
   }
 
   async function giveawayParticipantCount(giveawayId) {
-    const { count } = await supabase
+    const { count, error } = await supabase
       .from('giveaway_entries')
       .select('user_id', { count: 'exact', head: true })
       .eq('giveaway_id', giveawayId);
+
+    if (error) {
+      if (isGiveawaySchemaMissing(error)) warnMissingGiveawaySchemaOnce(error);
+      else console.warn('Failed to count giveaway participants:', error.message);
+      return 0;
+    }
 
     return count || 0;
   }
@@ -126,11 +152,17 @@ export function createGiveawayFeature({
   }
 
   async function refreshGiveawayMessage(guild, giveawayId) {
-    const { data: giveaway } = await supabase
+    const { data: giveaway, error } = await supabase
       .from('giveaways')
       .select('*')
       .eq('id', giveawayId)
       .maybeSingle();
+
+    if (error) {
+      if (isGiveawaySchemaMissing(error)) warnMissingGiveawaySchemaOnce(error);
+      else console.warn('Failed to load giveaway message:', error.message);
+      return;
+    }
 
     if (!giveaway?.message_id || !giveaway.channel_id) return;
 
@@ -143,23 +175,39 @@ export function createGiveawayFeature({
   }
 
   async function endGiveaway(guild, giveawayId, endedBy = null) {
-    const { data: giveaway } = await supabase
+    const { data: giveaway, error: giveawayError } = await supabase
       .from('giveaways')
       .select('*')
       .eq('id', giveawayId)
       .maybeSingle();
 
+    if (giveawayError) {
+      if (isGiveawaySchemaMissing(giveawayError)) {
+        warnMissingGiveawaySchemaOnce(giveawayError);
+        return { giveaway: null, winners: [], schemaMissing: true };
+      }
+      throw giveawayError;
+    }
+
     if (!giveaway || giveaway.status === 'ended') return { giveaway, winners: [] };
 
-    const { data: entries } = await supabase
+    const { data: entries, error: entriesError } = await supabase
       .from('giveaway_entries')
       .select('*')
       .eq('giveaway_id', giveaway.id);
 
+    if (entriesError) {
+      if (isGiveawaySchemaMissing(entriesError)) {
+        warnMissingGiveawaySchemaOnce(entriesError);
+        return { giveaway, winners: [], schemaMissing: true };
+      }
+      throw entriesError;
+    }
+
     const winners = pickWeightedWinners(entries || [], giveaway.winners_count);
     const winnerIds = winners.map((winner) => winner.user_id);
 
-    const { data: endedGiveaway } = await supabase
+    const { data: endedGiveaway, error: updateError } = await supabase
       .from('giveaways')
       .update({
         status: 'ended',
@@ -170,6 +218,8 @@ export function createGiveawayFeature({
       .eq('id', giveaway.id)
       .select('*')
       .single();
+
+    if (updateError) throw updateError;
 
     const participantCount = entries?.length || 0;
     const channel = await client.channels.fetch(giveaway.channel_id).catch(() => null);
@@ -222,14 +272,23 @@ export function createGiveawayFeature({
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (isGiveawaySchemaMissing(error)) {
+        warnMissingGiveawaySchemaOnce(error);
+        await interaction.editReply(missingGiveawaySchemaMessage());
+        return;
+      }
+      throw error;
+    }
 
     const message = await channel.send(giveawayPayload(interaction.guild, giveaway, 0));
 
-    await supabase
+    const { error: messageUpdateError } = await supabase
       .from('giveaways')
       .update({ message_id: message.id })
       .eq('id', giveaway.id);
+
+    if (messageUpdateError) console.warn('Failed to save giveaway message id:', messageUpdateError.message);
 
     await interaction.editReply(`Giveaway dibuat di <#${channel.id}>.`);
   }
@@ -245,11 +304,20 @@ export function createGiveawayFeature({
       return;
     }
 
-    const { data: giveaway } = await supabase
+    const { data: giveaway, error } = await supabase
       .from('giveaways')
       .select('*')
       .eq('id', giveawayId)
       .maybeSingle();
+
+    if (error) {
+      if (isGiveawaySchemaMissing(error)) {
+        warnMissingGiveawaySchemaOnce(error);
+        await interaction.reply({ content: missingGiveawaySchemaMessage(), flags: MessageFlags.Ephemeral });
+        return;
+      }
+      throw error;
+    }
 
     if (!giveaway || giveaway.status !== 'active' || new Date(giveaway.ends_at).getTime() <= Date.now()) {
       await interaction.reply({ content: 'Giveaway ini sudah selesai.', flags: MessageFlags.Ephemeral });
@@ -257,7 +325,7 @@ export function createGiveawayFeature({
       return;
     }
 
-    await supabase
+    const { error: entryError } = await supabase
       .from('giveaway_entries')
       .upsert({
         giveaway_id: giveaway.id,
@@ -265,6 +333,15 @@ export function createGiveawayFeature({
         username: interaction.user.tag,
         entries
       }, { onConflict: 'giveaway_id,user_id' });
+
+    if (entryError) {
+      if (isGiveawaySchemaMissing(entryError)) {
+        warnMissingGiveawaySchemaOnce(entryError);
+        await interaction.reply({ content: missingGiveawaySchemaMessage(), flags: MessageFlags.Ephemeral });
+        return;
+      }
+      throw entryError;
+    }
 
     await refreshGiveawayMessage(interaction.guild, giveaway.id);
     await interaction.reply({
@@ -290,27 +367,46 @@ export function createGiveawayFeature({
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (subcommand === 'end') {
-      await endGiveaway(interaction.guild, giveawayId, interaction.user.id);
+      const result = await endGiveaway(interaction.guild, giveawayId, interaction.user.id);
+      if (result.schemaMissing) {
+        await interaction.editReply(missingGiveawaySchemaMessage());
+        return;
+      }
+      if (!result.giveaway) {
+        await interaction.editReply('Giveaway tidak ditemukan.');
+        return;
+      }
       await interaction.editReply('Giveaway sudah diakhiri.');
       return;
     }
 
     if (subcommand === 'reroll') {
-      const { data: giveaway } = await supabase
+      const { data: giveaway, error } = await supabase
         .from('giveaways')
         .select('*')
         .eq('id', giveawayId)
         .maybeSingle();
+
+      if (error) {
+        if (isGiveawaySchemaMissing(error)) {
+          warnMissingGiveawaySchemaOnce(error);
+          await interaction.editReply(missingGiveawaySchemaMessage());
+          return;
+        }
+        throw error;
+      }
 
       if (!giveaway) {
         await interaction.editReply('Giveaway tidak ditemukan.');
         return;
       }
 
-      await supabase
+      const { error: resetError } = await supabase
         .from('giveaways')
         .update({ status: 'active', winner_ids: [], ended_at: null, ended_by: null })
         .eq('id', giveaway.id);
+
+      if (resetError) throw resetError;
 
       await endGiveaway(interaction.guild, giveaway.id, interaction.user.id);
       await interaction.editReply('Winner giveaway sudah di-reroll.');
@@ -325,7 +421,11 @@ export function createGiveawayFeature({
       .lte('ends_at', new Date().toISOString());
 
     if (error) {
-      console.warn('Failed to load due giveaways:', error.message);
+      if (isGiveawaySchemaMissing(error)) {
+        warnMissingGiveawaySchemaOnce(error);
+      } else {
+        console.warn('Failed to load due giveaways:', error.message);
+      }
       return;
     }
 
