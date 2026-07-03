@@ -18,6 +18,7 @@ export const TIER_ROLES = [
 ];
 
 export const VERIFY_IMAGE_PATH = 'assets/ws-store-verify-banner.png';
+export const REKBER_IMAGE_PATH = 'assets/ws-store-rekber.png';
 
 export const SPAM_SETTINGS = {
   windowMs: 7_000,

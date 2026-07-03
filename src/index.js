@@ -17,7 +17,7 @@ import {
 } from 'discord.js';
 import { existsSync } from 'node:fs';
 import { config } from './config.js';
-import { CATEGORY, CHANNEL, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFY_IMAGE_PATH } from './constants.js';
+import { CATEGORY, CHANNEL, REKBER_IMAGE_PATH, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFY_IMAGE_PATH } from './constants.js';
 import { keepSupabaseAwake, supabase } from './db.js';
 import { createAntiSpamFeature } from './features/anti-spam.js';
 import { createGiveawayFeature } from './features/giveaways.js';
@@ -163,21 +163,45 @@ function ticketOpenButton(type) {
 function ticketPanelPayload(type) {
   const description = {
     order: 'Klik tombol di bawah untuk membeli produk WS Store. Ticket hanya dapat dibuka saat jam operasional.',
-    rekber: 'Gunakan ticket ini untuk jasa middleman / rekber agar transaksi lebih aman.\n\n**Catatan:** Ticket rekber selalu bisa dibuka, tetapi proses akan dibantu selagi admin / middleman sedang online.',
+    rekber: [
+      '**WS Store Middleman Service**',
+      'Buka ticket ini jika kamu butuh penengah transaksi agar proses jual-beli lebih tertata, aman, dan tercatat.',
+      '',
+      '**Fee Rekber:**',
+      '• Rp1.000 - Rp500.000 → Rp4.000',
+      '• Rp500.000 - Rp10.000.000 → Rp10.000',
+      '• Rp10.000.000 - Rp20.000.000 → Rp15.000',
+      '• Rp20.000.000 - Rp50.000.000 → Rp20.000',
+      '',
+      '**Ketentuan singkat:**',
+      '• Buyer dan seller wajib berada di ticket.',
+      '• Bukti deal, nominal, dan detail item harus jelas.',
+      '• Jangan lanjut transaksi di luar arahan middleman WS Store.',
+      '',
+      '**Catatan:** Ticket rekber selalu bisa dibuka, tetapi proses akan dibantu selagi admin / middleman sedang online.'
+    ].join('\n'),
     support: 'Gunakan ticket ini untuk pertanyaan, kendala order, atau bantuan umum.'
   };
   const statusText = type === 'rekber'
     ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
     : operatingStatusText();
 
-  return {
+  const embed = embedBase()
+    .setTitle(`🎟️ ${ticketTypeLabel(type)}`)
+    .setDescription(`${description[type]}\n\n${statusText}`);
+  const payload = {
     embeds: [
-      embedBase()
-        .setTitle(`🎟️ ${ticketTypeLabel(type)}`)
-        .setDescription(`${description[type]}\n\n${statusText}`)
+      embed
     ],
     components: [new ActionRowBuilder().addComponents(ticketOpenButton(type))]
   };
+
+  if (type === 'rekber' && existsSync(REKBER_IMAGE_PATH)) {
+    embed.setImage('attachment://ws-store-rekber.png');
+    payload.files = [new AttachmentBuilder(REKBER_IMAGE_PATH, { name: 'ws-store-rekber.png' })];
+  }
+
+  return payload;
 }
 
 function verifyPanelPayload() {
