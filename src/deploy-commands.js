@@ -8,6 +8,7 @@ const serviceCommands = [
   ['support', 'Ticket support'],
   ['limited', 'Limited item'],
   ['via-login', 'Via login'],
+  ['via-username', 'Via username'],
   ['group-payout', 'Group payout'],
   ['gift-gamepass', 'Gift gamepass']
 ];

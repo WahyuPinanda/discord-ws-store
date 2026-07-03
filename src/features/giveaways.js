@@ -6,14 +6,15 @@ import {
   time,
   TimestampStyles
 } from 'discord.js';
+import { ROLE, TIER_ROLES } from '../constants.js';
 
 export const GIVEAWAY_ENTRY_ROLES = [
-  { role: '💎 Customer 50Jt+', entries: 12 },
-  { role: '💠 Customer 20Jt+', entries: 8 },
-  { role: '🔷 Customer 10Jt+', entries: 6 },
-  { role: '🔹 Customer 5Jt+', entries: 4 },
-  { role: '⭐ Customer 1Jt+', entries: 2 },
-  { role: '✅ Client', entries: 1 }
+  { role: TIER_ROLES[0].name, entries: 12 },
+  { role: TIER_ROLES[1].name, entries: 8 },
+  { role: TIER_ROLES[2].name, entries: 6 },
+  { role: TIER_ROLES[3].name, entries: 4 },
+  { role: TIER_ROLES[4].name, entries: 2 },
+  { role: ROLE.client, entries: 1 }
 ];
 
 let giveawaySchemaWarningShown = false;

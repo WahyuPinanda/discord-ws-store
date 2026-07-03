@@ -19,14 +19,14 @@ import { existsSync } from 'node:fs';
 import { config } from './config.js';
 import { CATEGORY, CHANNEL, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFY_IMAGE_PATH } from './constants.js';
 import { keepSupabaseAwake, supabase } from './db.js';
+import { createAntiSpamFeature } from './features/anti-spam.js';
 import { createGiveawayFeature } from './features/giveaways.js';
 import { howToOrderPanelPayload, rulesPanelPayload } from './features/info-panels.js';
+import { createInviteTrackerFeature } from './features/invite-tracker.js';
 import { valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './features/market.js';
 import { startHealthServer } from './health.js';
 import { formatRupiah, isStoreOpen, operatingStatusText } from './time.js';
 
-const spamState = new Map();
-const inviteCache = new Map();
 const serviceStatusCache = new Map();
 
 const client = new Client({
@@ -69,6 +69,7 @@ function serviceCacheKey(guildId, service) {
 
 function normalizeServiceName(service) {
   return service === 'via_login' ? 'via-login'
+    : service === 'via_username' ? 'via-username'
     : service === 'group_payout' ? 'group-payout'
       : service === 'gift_gamepass' ? 'gift-gamepass'
         : service;
@@ -132,75 +133,6 @@ async function updateServiceStatus(guild, service, isOpen, updatedBy) {
   serviceStatusCache.set(serviceCacheKey(guild.id, normalized), isOpen);
   await refreshServerStats(guild);
   await refreshPanels(guild);
-}
-
-function pruneSpamTimestamps(timestamps, windowMs, now = Date.now()) {
-  return timestamps.filter((timestamp) => now - timestamp <= windowMs);
-}
-
-function getSpamBucket(message) {
-  const key = `${message.guildId}:${message.author.id}`;
-  const now = Date.now();
-  const existing = spamState.get(key) || {
-    timestamps: [],
-    warnedAt: 0,
-    lastActionAt: 0
-  };
-
-  existing.timestamps = pruneSpamTimestamps(existing.timestamps, SPAM_SETTINGS.windowMs, now);
-  existing.timestamps.push(now);
-  spamState.set(key, existing);
-
-  return existing;
-}
-
-async function deleteRecentSpamMessages(message) {
-  if (!message.channel?.messages?.fetch) return;
-
-  const since = Date.now() - SPAM_SETTINGS.cleanupWindowMs;
-  const fetched = await message.channel.messages.fetch({ limit: 50 }).catch(() => null);
-  if (!fetched) return;
-
-  const spamMessages = fetched.filter((item) =>
-    item.author.id === message.author.id
-    && item.createdTimestamp >= since
-    && item.deletable
-  );
-
-  if (!spamMessages.size) return;
-
-  if (message.channel.bulkDelete) {
-    await message.channel.bulkDelete(spamMessages, true).catch(async () => {
-      await Promise.all([...spamMessages.values()].map((item) => item.delete().catch(() => null)));
-    });
-    return;
-  }
-
-  await Promise.all([...spamMessages.values()].map((item) => item.delete().catch(() => null)));
-}
-
-async function sendSpamNotice(message, description) {
-  const warning = await message.channel.send({
-    content: `<@${message.author.id}> ${description}`
-  }).catch(() => null);
-
-  if (warning) {
-    setTimeout(() => warning.delete().catch(() => null), 12_000).unref();
-  }
-}
-
-async function timeoutForSpam(message, reason) {
-  const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
-
-  await deleteRecentSpamMessages(message);
-
-  if (member?.moderatable) {
-    await member.timeout(SPAM_SETTINGS.timeoutMs, reason).catch(() => null);
-    await sendSpamNotice(message, `kamu terkena timeout 5 menit karena spam. Alasan: ${reason}`);
-    return;
-  }
-
-  await sendSpamNotice(message, 'spam terdeteksi dan pesan sudah dihapus, tetapi bot tidak bisa memberi timeout pada role kamu.');
 }
 
 function ticketTypeLabel(type) {
@@ -349,6 +281,12 @@ async function ensureRole(guild, name, options = {}) {
   const existing = guild.roles.cache.find((role) => role.name === name);
   if (existing) return existing;
 
+  const aliasMatch = options.aliases?.map((alias) => guild.roles.cache.find((role) => role.name === alias)).find(Boolean);
+  if (aliasMatch) {
+    await aliasMatch.setName(name).catch(() => null);
+    return aliasMatch;
+  }
+
   return guild.roles.create({
     name,
     color: options.color || 0x95a5a6,
@@ -460,77 +398,6 @@ async function deleteChannel(channel, reason) {
   if (channel?.deletable) await channel.delete(reason).catch(() => null);
 }
 
-async function refreshInviteCache(guild) {
-  const invites = await guild.invites.fetch().catch((error) => {
-    console.warn(`Invite cache refresh failed for ${guild.name}:`, error.message);
-    return null;
-  });
-
-  if (!invites) return null;
-
-  inviteCache.set(
-    guild.id,
-    new Map(invites.map((invite) => [
-      invite.code,
-      {
-        uses: invite.uses || 0,
-        inviterId: invite.inviterId,
-        inviterTag: invite.inviter?.tag || invite.inviter?.username || 'Unknown'
-      }
-    ]))
-  );
-
-  return invites;
-}
-
-async function detectUsedInvite(guild) {
-  const previous = inviteCache.get(guild.id) || new Map();
-  const invites = await guild.invites.fetch().catch((error) => {
-    console.warn(`Invite detect failed for ${guild.name}:`, error.message);
-    return null;
-  });
-
-  if (!invites) return null;
-
-  let usedInvite = null;
-  for (const invite of invites.values()) {
-    const oldUses = previous.get(invite.code)?.uses || 0;
-    const newUses = invite.uses || 0;
-    if (newUses > oldUses) {
-      usedInvite = invite;
-      break;
-    }
-  }
-
-  inviteCache.set(
-    guild.id,
-    new Map(invites.map((invite) => [
-      invite.code,
-      {
-        uses: invite.uses || 0,
-        inviterId: invite.inviterId,
-        inviterTag: invite.inviter?.tag || invite.inviter?.username || 'Unknown'
-      }
-    ]))
-  );
-
-  return usedInvite;
-}
-
-async function sendWelcomeInviteLog(member, invite) {
-  const channel = member.guild.channels.cache.find((item) => channelMatchesName(item, CHANNEL.welcome));
-  if (!channel) return;
-
-  const invitedBy = invite?.inviter
-    ? `<@${invite.inviter.id}>`
-    : 'Unknown';
-  const uses = invite?.uses || 0;
-
-  await channel.send({
-    content: `<@${member.id}> has been invited by ${invitedBy} and has now ${uses} invite${uses === 1 ? '' : 's'}.`
-  }).catch(() => null);
-}
-
 const {
   handleGiveawayCommand,
   handleGiveawayJoin,
@@ -542,6 +409,22 @@ const {
   memberIsStaff,
   channelMatchesName,
   giveawayChannelName: CHANNEL.giveaways
+});
+
+const { handleMessageCreate } = createAntiSpamFeature({
+  settings: SPAM_SETTINGS,
+  memberIsStaff
+});
+
+const {
+  refreshInviteCache,
+  handleGuildMemberAdd,
+  handleInviteCreate,
+  handleInviteDelete
+} = createInviteTrackerFeature({
+  channelMatchesName,
+  unverifiedRoleName: ROLE.unverified,
+  welcomeChannelName: CHANNEL.welcome
 });
 
 async function upsertPanel(type, message) {
@@ -677,7 +560,7 @@ async function setupServer(interaction) {
   await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d });
 
   for (const tier of TIER_ROLES) {
-    await ensureRole(guild, tier.name, { color: 0x00d2ff, hoist: true });
+    await ensureRole(guild, tier.name, { color: 0x00d2ff, hoist: true, aliases: tier.aliases });
   }
 
   const everyone = guild.roles.everyone;
@@ -1075,7 +958,8 @@ async function updateCustomerAndRoles(guild, buyerId, buyerTag, amount) {
     if (customerRole) await member.roles.add(customerRole).catch(() => null);
 
     const tierRoleIds = TIER_ROLES
-      .map((item) => guild.roles.cache.find((role) => role.name === item.name)?.id)
+      .flatMap((item) => [item.name, ...(item.aliases || [])])
+      .map((roleName) => guild.roles.cache.find((role) => role.name === roleName)?.id)
       .filter(Boolean);
 
     if (tierRoleIds.length) await member.roles.remove(tierRoleIds).catch(() => null);
@@ -1426,59 +1310,18 @@ async function handleServiceStatusCommand(interaction, isOpen) {
 
 client.on('messageCreate', async (message) => {
   try {
-    if (!message.guild || message.author.bot || !message.member) return;
-    if (memberIsStaff(message.member)) return;
-
-    const now = Date.now();
-    const bucket = getSpamBucket(message);
-    const rapidCount = pruneSpamTimestamps(bucket.timestamps, SPAM_SETTINGS.rapidWindowMs, now).length;
-    const normalCount = bucket.timestamps.length;
-    const hasActiveWarning = bucket.warnedAt && now - bucket.warnedAt <= SPAM_SETTINGS.warningExpiresMs;
-    const actionCooldown = now - bucket.lastActionAt < 5_000;
-
-    if (actionCooldown) return;
-
-    if (rapidCount >= SPAM_SETTINGS.rapidMaxMessages) {
-      bucket.lastActionAt = now;
-      bucket.timestamps = [];
-      await timeoutForSpam(message, 'spam terlalu cepat');
-      return;
-    }
-
-    if (normalCount >= SPAM_SETTINGS.maxMessages) {
-      bucket.lastActionAt = now;
-      bucket.timestamps = [];
-
-      if (hasActiveWarning) {
-        await timeoutForSpam(message, 'mengulang spam setelah peringatan');
-        bucket.warnedAt = 0;
-        return;
-      }
-
-      bucket.warnedAt = now;
-      await deleteRecentSpamMessages(message);
-      await sendSpamNotice(message, 'jangan spam. Ini peringatan pertama. Jika mengulang, kamu akan terkena timeout 5 menit.');
-    }
+    await handleMessageCreate(message);
   } catch (error) {
     console.warn('Anti-spam handler failed:', error.message);
   }
 });
 
 client.on('guildMemberAdd', async (member) => {
-  const role = member.guild.roles.cache.find((item) => item.name === ROLE.unverified);
-  if (role) await member.roles.add(role).catch(() => null);
-
-  const usedInvite = await detectUsedInvite(member.guild);
-  await sendWelcomeInviteLog(member, usedInvite);
+  await handleGuildMemberAdd(member);
 });
 
-client.on('inviteCreate', async (invite) => {
-  if (invite.guild) await refreshInviteCache(invite.guild);
-});
-
-client.on('inviteDelete', async (invite) => {
-  if (invite.guild) await refreshInviteCache(invite.guild);
-});
+client.on('inviteCreate', handleInviteCreate);
+client.on('inviteDelete', handleInviteDelete);
 
 client.on('interactionCreate', async (interaction) => {
   try {
