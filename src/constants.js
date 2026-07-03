@@ -60,6 +60,7 @@ export const SERVICE_DEFINITIONS = {
     label: 'VIA LOGIN',
     statsLabel: 'via-login',
     voiceStatsLabel: 'VILOG & PREM',
+    voiceAliases: ['VILOG'],
     statsEmoji: '🧁',
     showInStats: true
   },

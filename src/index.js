@@ -110,7 +110,12 @@ function statusChannelName(service, isOpen) {
 }
 
 function serviceStatusNameKeys(definition) {
-  return [...new Set([definition.statsLabel, definition.voiceStatsLabel, definition.label].filter(Boolean).map((item) => channelNameKey(item)))];
+  return [...new Set([
+    definition.statsLabel,
+    definition.voiceStatsLabel,
+    definition.label,
+    ...(definition.voiceAliases || [])
+  ].filter(Boolean).map((item) => channelNameKey(item)))];
 }
 
 async function updateServiceStatus(guild, service, isOpen, updatedBy) {
@@ -379,6 +384,21 @@ async function deleteDuplicateManagedChannels(guild, keepChannel, type, name) {
   }
 }
 
+async function deleteDuplicateChannelsByTypes(guild, keepChannel, types, name) {
+  const duplicates = guild.channels.cache.filter(
+    (channel) =>
+      channel.id !== keepChannel.id
+      && types.includes(channel.type)
+      && channelMatchesName(channel, name)
+  );
+
+  for (const duplicate of duplicates.values()) {
+    if (duplicate.deletable) {
+      await duplicate.delete(`Removed duplicate WS Store channel: ${name}`).catch(() => null);
+    }
+  }
+}
+
 async function ensureTextChannel(guild, name, parent, permissionOverwrites = []) {
   const existing = findManagedChannel(guild, ChannelType.GuildText, name, parent);
   if (existing) {
@@ -395,6 +415,41 @@ async function ensureTextChannel(guild, name, parent, permissionOverwrites = [])
     parent,
     permissionOverwrites
   });
+}
+
+async function ensureAnnouncementChannel(guild, name, parent, permissionOverwrites = []) {
+  const targetTypes = [ChannelType.GuildAnnouncement, ChannelType.GuildText];
+  const existingAnnouncement = findManagedChannel(guild, ChannelType.GuildAnnouncement, name, parent);
+  if (existingAnnouncement) {
+    if (parent && existingAnnouncement.parentId !== parent.id) await existingAnnouncement.setParent(parent).catch(() => null);
+    if (existingAnnouncement.name !== name) await existingAnnouncement.setName(name).catch(() => null);
+    if (permissionOverwrites.length) await existingAnnouncement.permissionOverwrites.set(permissionOverwrites).catch(() => null);
+    await deleteDuplicateChannelsByTypes(guild, existingAnnouncement, targetTypes, name);
+    return existingAnnouncement;
+  }
+
+  const existingText = findManagedChannel(guild, ChannelType.GuildText, name, parent);
+  if (existingText) {
+    try {
+      const converted = await existingText.setType(ChannelType.GuildAnnouncement);
+      if (parent && converted.parentId !== parent.id) await converted.setParent(parent).catch(() => null);
+      if (converted.name !== name) await converted.setName(name).catch(() => null);
+      if (permissionOverwrites.length) await converted.permissionOverwrites.set(permissionOverwrites).catch(() => null);
+      await deleteDuplicateChannelsByTypes(guild, converted, targetTypes, name);
+      return converted;
+    } catch {
+      await deleteChannel(existingText, `Replaced text WS Store channel with announcement channel: ${name}`);
+    }
+  }
+
+  const channel = await guild.channels.create({
+    name,
+    type: ChannelType.GuildAnnouncement,
+    parent,
+    permissionOverwrites
+  });
+  await deleteDuplicateChannelsByTypes(guild, channel, targetTypes, name);
+  return channel;
 }
 
 async function ensureVoiceChannel(guild, name, parent, permissionOverwrites = []) {
@@ -529,7 +584,7 @@ async function refreshServerStats(guild) {
   }
 
   const statsCategory = await ensureCategory(guild, CATEGORY.stats, announcementOverwrites);
-  await ensureTextChannel(guild, '📢・announcement-server', statsCategory, announcementOverwrites);
+  await ensureAnnouncementChannel(guild, '📢・announcement-server', statsCategory, announcementOverwrites);
 
   for (const service of Object.keys(SERVICE_DEFINITIONS)) {
     const definition = SERVICE_DEFINITIONS[service];
