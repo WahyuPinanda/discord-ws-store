@@ -2,6 +2,28 @@ import 'dotenv/config';
 import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { config } from './config.js';
 
+const serviceCommands = [
+  ['order', 'Ticket order'],
+  ['rekber', 'Ticket rekber / middleman'],
+  ['support', 'Ticket support'],
+  ['limited', 'Limited item'],
+  ['via-login', 'Via login'],
+  ['group-payout', 'Group payout'],
+  ['gift-gamepass', 'Gift gamepass']
+];
+
+function addServiceSubcommands(command) {
+  for (const [name, description] of serviceCommands) {
+    command.addSubcommand((subcommand) =>
+      subcommand
+        .setName(name)
+        .setDescription(description)
+    );
+  }
+
+  return command;
+}
+
 const commands = [
   new SlashCommandBuilder()
     .setName('setup-server')
@@ -32,7 +54,19 @@ const commands = [
     .setDescription('Cek total transaksi dan tier customer.')
     .addUserOption((option) =>
       option.setName('user').setDescription('Customer yang dicek').setRequired(false)
-    )
+    ),
+  addServiceSubcommands(
+    new SlashCommandBuilder()
+      .setName('open')
+      .setDescription('Set service WS Store menjadi OPEN.')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  ),
+  addServiceSubcommands(
+    new SlashCommandBuilder()
+      .setName('close')
+      .setDescription('Set service WS Store menjadi CLOSED.')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  )
 ].map((command) => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(config.discordToken);

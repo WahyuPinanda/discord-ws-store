@@ -50,6 +50,15 @@ create table if not exists public.bot_heartbeat (
   note text
 );
 
+create table if not exists public.service_statuses (
+  guild_id text not null,
+  service text not null,
+  is_open boolean not null default true,
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, service)
+);
+
 create or replace function public.touch_updated_at()
 returns trigger as $$
 begin
@@ -63,8 +72,14 @@ create trigger customers_touch_updated_at
 before update on public.customers
 for each row execute function public.touch_updated_at();
 
+drop trigger if exists service_statuses_touch_updated_at on public.service_statuses;
+create trigger service_statuses_touch_updated_at
+before update on public.service_statuses
+for each row execute function public.touch_updated_at();
+
 alter table public.customers disable row level security;
 alter table public.tickets disable row level security;
 alter table public.transactions disable row level security;
 alter table public.ticket_panels disable row level security;
 alter table public.bot_heartbeat disable row level security;
+alter table public.service_statuses disable row level security;
