@@ -66,7 +66,41 @@ const commands = [
       .setName('close')
       .setDescription('Set service WS Store menjadi CLOSED.')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-  )
+  ),
+  new SlashCommandBuilder()
+    .setName('giveaway')
+    .setDescription('Kelola giveaway WS Store.')
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('create')
+        .setDescription('Buat giveaway baru.')
+        .addStringOption((option) =>
+          option.setName('prize').setDescription('Hadiah giveaway, contoh: Total 2000 Robux (4 orang)').setRequired(true)
+        )
+        .addStringOption((option) =>
+          option.setName('duration').setDescription('Durasi giveaway, contoh: 30m, 4h, 1d').setRequired(true)
+        )
+        .addIntegerOption((option) =>
+          option.setName('winners').setDescription('Jumlah winner').setRequired(false).setMinValue(1).setMaxValue(20)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('end')
+        .setDescription('Akhiri giveaway lebih cepat.')
+        .addIntegerOption((option) =>
+          option.setName('id').setDescription('ID giveaway').setRequired(true).setMinValue(1)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('reroll')
+        .setDescription('Undi ulang winner giveaway.')
+        .addIntegerOption((option) =>
+          option.setName('id').setDescription('ID giveaway').setRequired(true).setMinValue(1)
+        )
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 ].map((command) => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(config.discordToken);

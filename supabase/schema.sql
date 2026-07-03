@@ -59,6 +59,31 @@ create table if not exists public.service_statuses (
   primary key (guild_id, service)
 );
 
+create table if not exists public.giveaways (
+  id bigserial primary key,
+  guild_id text not null,
+  channel_id text not null,
+  message_id text,
+  host_id text not null,
+  prize text not null,
+  winners_count integer not null default 1 check (winners_count > 0),
+  winner_ids text[] not null default '{}',
+  status text not null default 'active' check (status in ('active', 'ended')),
+  ends_at timestamptz not null,
+  ended_at timestamptz,
+  ended_by text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.giveaway_entries (
+  giveaway_id bigint not null references public.giveaways(id) on delete cascade,
+  user_id text not null,
+  username text,
+  entries integer not null default 1 check (entries > 0),
+  created_at timestamptz not null default now(),
+  primary key (giveaway_id, user_id)
+);
+
 create or replace function public.touch_updated_at()
 returns trigger as $$
 begin
@@ -83,3 +108,5 @@ alter table public.transactions disable row level security;
 alter table public.ticket_panels disable row level security;
 alter table public.bot_heartbeat disable row level security;
 alter table public.service_statuses disable row level security;
+alter table public.giveaways disable row level security;
+alter table public.giveaway_entries disable row level security;
