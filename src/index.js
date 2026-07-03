@@ -17,124 +17,17 @@ import {
 } from 'discord.js';
 import { existsSync } from 'node:fs';
 import { config } from './config.js';
+import { CATEGORY, CHANNEL, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFY_IMAGE_PATH } from './constants.js';
 import { keepSupabaseAwake, supabase } from './db.js';
 import { createGiveawayFeature } from './features/giveaways.js';
+import { howToOrderPanelPayload, rulesPanelPayload } from './features/info-panels.js';
 import { valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './features/market.js';
 import { startHealthServer } from './health.js';
 import { formatRupiah, isStoreOpen, operatingStatusText } from './time.js';
 
-const ROLE = {
-  owner: '👑 Owner',
-  admin: '🛡️ Admin',
-  middleman: '🤝 Middleman / Rekber Staff',
-  creator: '🎬 Content Creator',
-  booster: '🚀 Server Booster',
-  customer: '🛒 Customer',
-  client: '✅ Client',
-  unverified: '🔒 Unverified'
-};
-
-const TIER_ROLES = [
-  { min: 50_000_000, name: '💎 Customer 50Jt+' },
-  { min: 20_000_000, name: '💠 Customer 20Jt+' },
-  { min: 10_000_000, name: '🔷 Customer 10Jt+' },
-  { min: 5_000_000, name: '🔹 Customer 5Jt+' },
-  { min: 1_000_000, name: '⭐ Customer 1Jt+' }
-];
-
-const VERIFY_IMAGE_PATH = 'assets/ws-store-verify-banner.png';
-
-const SPAM_SETTINGS = {
-  windowMs: 7_000,
-  maxMessages: 5,
-  rapidWindowMs: 2_500,
-  rapidMaxMessages: 5,
-  cleanupWindowMs: 15_000,
-  warningExpiresMs: 5 * 60_000,
-  timeoutMs: 5 * 60_000
-};
-
 const spamState = new Map();
 const inviteCache = new Map();
-
-const SERVICE_DEFINITIONS = {
-  order: {
-    label: 'ORDER',
-    statsLabel: 'Ticket Order',
-    panelType: 'ticket_order',
-    showInStats: false
-  },
-  rekber: {
-    label: 'REKBER',
-    statsLabel: 'Ticket Rekber',
-    panelType: 'ticket_rekber',
-    showInStats: false
-  },
-  support: {
-    label: 'SUPPORT',
-    statsLabel: 'Ticket Support',
-    panelType: 'ticket_support',
-    showInStats: false
-  },
-  limited: {
-    label: 'LIMITED',
-    statsLabel: 'LIMITED',
-    statsEmoji: '💎',
-    showInStats: true
-  },
-  'via-login': {
-    label: 'VIA LOGIN',
-    statsLabel: 'VIA LOGIN',
-    statsEmoji: '🧁',
-    showInStats: true
-  },
-  'group-payout': {
-    label: 'GROUP PAYOUT',
-    statsLabel: 'Grup Payout',
-    statsEmoji: '💳',
-    showInStats: true
-  },
-  'gift-gamepass': {
-    label: 'GIFT GAMEPASS',
-    statsLabel: 'GIFT GAMEPASS',
-    statsEmoji: '🎮',
-    showInStats: true
-  }
-};
-
-const TICKET_SERVICE_TYPES = new Set(['order', 'rekber', 'support']);
 const serviceStatusCache = new Map();
-
-const CATEGORY = {
-  stats: '📊 SERVER STATS 📊',
-  gate: '👋 VIBE GATE',
-  info: '📌 INFORMATION',
-  market: '💎 MARKET & PRICE',
-  ticket: '🎟️ ORDER / BERTANYA DISINI',
-  activeTicket: '🎫 ACTIVE TICKETS',
-  lounge: '💬 LOUNGE',
-  community: '🎉 COMMUNITY',
-  transaction: '📂 TRANSACTION',
-  admin: '🔐 ADMIN AREA'
-};
-
-const CHANNEL = {
-  verify: '✅・verify',
-  welcome: '👋・welcome',
-  rules: '📜・rules',
-  howToOrder: '📌・how-to-order',
-  payment: '💳・payment-method',
-  ticketOrder: '🎟️・ticket-order',
-  ticketRekber: '🤝・ticket-rekber',
-  ticketSupport: '🛠️・ticket-support',
-  valueUpdate: '🔎・value-update-realtime',
-  robuxViaUsername: '💎・robux-via-username',
-  giveaways: '🎉・giveaways',
-  successTransaction: '✅・success-transaction',
-  ticketTranscript: '📜・ticket-transcript',
-  adminLog: '📋・admin-log',
-  ticketLog: '🎫・ticket-log'
-};
 
 const client = new Client({
   intents: [
@@ -211,7 +104,7 @@ async function loadServiceStatuses(guildId) {
 function statusChannelName(service, isOpen) {
   const definition = SERVICE_DEFINITIONS[service];
   const statusIcon = isOpen ? '🟢' : '🔴';
-  return `${definition.statsEmoji || statusIcon}・${definition.statsLabel} : ${statusIcon}`;
+  return `${definition.statsEmoji || statusIcon}・${definition.statsLabel}-${statusIcon}`;
 }
 
 function serviceStatusNameKeys(definition) {
@@ -395,25 +288,6 @@ function verifyPanelPayload() {
   }
 
   return payload;
-}
-
-function paymentPanelPayload() {
-  return {
-    embeds: [
-      embedBase()
-        .setTitle('💳 PAYMENT METHOD')
-        .setDescription('Klik tombol di bawah untuk menampilkan QRIS WS Store. Setelah transfer, kirim bukti pembayaran di ticket order kamu.')
-    ],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('payment:qris')
-          .setLabel('Tampilkan QRIS')
-          .setEmoji('💳')
-          .setStyle(ButtonStyle.Primary)
-      )
-    ]
-  };
 }
 
 function ticketControlRows(type) {
@@ -728,7 +602,7 @@ async function refreshServerStats(guild) {
   }
 
   const statsCategory = await ensureCategory(guild, CATEGORY.stats, overwrites);
-  await ensureTextChannel(guild, '📢・Announcement-Server', statsCategory, overwrites);
+  await ensureTextChannel(guild, '📢・announcement-server', statsCategory, overwrites);
 
   for (const service of Object.keys(SERVICE_DEFINITIONS)) {
     const definition = SERVICE_DEFINITIONS[service];
@@ -815,10 +689,26 @@ async function setupServer(interaction) {
     { id: middlemanRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
   ];
 
+  const ownerAdminPublish = [
+    { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+    { id: clientRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
+    { id: ownerRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+    { id: adminRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+    { id: middlemanRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] }
+  ];
+
   const publicReadOnly = [
     { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
     { id: clientRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
     ...staffAllow
+  ];
+
+  const transactionReadOnly = [
+    { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+    { id: clientRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AddReactions], deny: [PermissionsBitField.Flags.SendMessages] },
+    { id: ownerRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AddReactions] },
+    { id: adminRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AddReactions], deny: [PermissionsBitField.Flags.SendMessages] },
+    { id: middlemanRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AddReactions], deny: [PermissionsBitField.Flags.SendMessages] }
   ];
 
   const publicChat = [
@@ -846,9 +736,14 @@ async function setupServer(interaction) {
     ...staffAllow
   ];
 
+  const legacyGateCategory = guild.channels.cache.find(
+    (channel) => channel.type === ChannelType.GuildCategory && channelMatchesName(channel, '👋 VIBE GATE')
+  );
+  if (legacyGateCategory) await legacyGateCategory.setName(CATEGORY.gate).catch(() => null);
+
   const gateCategory = await ensureCategory(guild, CATEGORY.gate, welcomeReadOnly);
-  const infoCategory = await ensureCategory(guild, CATEGORY.info, publicReadOnly);
-  const marketCategory = await ensureCategory(guild, CATEGORY.market, publicReadOnly);
+  const infoCategory = await ensureCategory(guild, CATEGORY.info, ownerAdminPublish);
+  const marketCategory = await ensureCategory(guild, CATEGORY.market, ownerAdminPublish);
   const ticketCategory = await ensureCategory(guild, CATEGORY.ticket, publicReadOnly);
   const activeTicketCategory = await ensureCategory(guild, CATEGORY.activeTicket, [
     { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
@@ -856,7 +751,7 @@ async function setupServer(interaction) {
   ]);
   const loungeCategory = await ensureCategory(guild, CATEGORY.lounge, publicChat);
   const communityCategory = await ensureCategory(guild, CATEGORY.community, publicChat);
-  const transactionCategory = await ensureCategory(guild, CATEGORY.transaction, publicReadOnly);
+  const transactionCategory = await ensureCategory(guild, CATEGORY.transaction, transactionReadOnly);
   const adminCategory = await ensureCategory(guild, CATEGORY.admin, [
     { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
     { id: ownerRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
@@ -876,21 +771,18 @@ async function setupServer(interaction) {
     ...staffAllow
   ]);
 
-  await ensureTextChannel(guild, '📢・announcements', infoCategory, publicReadOnly);
-  await ensureTextChannel(guild, '📦・stock-update', infoCategory, publicReadOnly);
-  const rulesChannel = await ensureTextChannel(guild, CHANNEL.rules, infoCategory, [
-    { id: everyone.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
-    ...staffAllow
-  ]);
-  const howToOrderChannel = await ensureTextChannel(guild, CHANNEL.howToOrder, infoCategory, publicReadOnly);
+  await ensureTextChannel(guild, '📢・announcements', infoCategory, ownerAdminPublish);
+  await ensureTextChannel(guild, '📦・stock-update', infoCategory, ownerAdminPublish);
+  const rulesChannel = await ensureTextChannel(guild, CHANNEL.rules, infoCategory, ownerAdminPublish);
+  const howToOrderChannel = await ensureTextChannel(guild, CHANNEL.howToOrder, infoCategory, ownerAdminPublish);
 
-  await ensureTextChannel(guild, '💵・gift-gamepass-all-map', marketCategory, publicReadOnly);
-  await ensureTextChannel(guild, '🌟・stock-limited-item', marketCategory, publicReadOnly);
-  await ensureTextChannel(guild, '➤・item-tumbal-trade', marketCategory, publicReadOnly);
-  const robuxChannel = await ensureTextChannel(guild, '💎・robux-instant-vilog', marketCategory, publicReadOnly);
-  const viaUsernameChannel = await ensureTextChannel(guild, CHANNEL.robuxViaUsername, marketCategory, publicReadOnly);
-  await ensureTextChannel(guild, '🌟・group-payout', marketCategory, publicReadOnly);
-  const valueUpdateChannel = await ensureTextChannel(guild, CHANNEL.valueUpdate, marketCategory, publicReadOnly);
+  await ensureTextChannel(guild, '💵・gift-gamepass-all-map', marketCategory, ownerAdminPublish);
+  await ensureTextChannel(guild, '🌟・stock-limited-item', marketCategory, ownerAdminPublish);
+  await ensureTextChannel(guild, '➤・item-tumbal-trade', marketCategory, ownerAdminPublish);
+  const robuxChannel = await ensureTextChannel(guild, '💎・robux-instant-vilog', marketCategory, ownerAdminPublish);
+  const viaUsernameChannel = await ensureTextChannel(guild, CHANNEL.robuxViaUsername, marketCategory, ownerAdminPublish);
+  await ensureTextChannel(guild, '🌟・group-payout', marketCategory, ownerAdminPublish);
+  const valueUpdateChannel = await ensureTextChannel(guild, CHANNEL.valueUpdate, marketCategory, ownerAdminPublish);
 
   const ticketOrderChannel = await ensureTextChannel(guild, CHANNEL.ticketOrder, ticketCategory, publicReadOnly);
   const ticketRekberChannel = await ensureTextChannel(guild, CHANNEL.ticketRekber, ticketCategory, publicReadOnly);
@@ -906,8 +798,8 @@ async function setupServer(interaction) {
   await deleteChannelByName(guild, '🤖・bot-cmd');
   await ensureVoiceChannel(guild, 'Room 1', communityCategory, publicVoice);
 
-  await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, publicReadOnly);
-  await ensureTextChannel(guild, '🧾・rekber-history', transactionCategory, publicReadOnly);
+  await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, transactionReadOnly);
+  await ensureTextChannel(guild, '🧾・rekber-history', transactionCategory, transactionReadOnly);
   await ensureTextChannel(guild, CHANNEL.adminLog, adminCategory);
   await ensureTextChannel(guild, CHANNEL.ticketLog, adminCategory);
   await ensureTextChannel(guild, CHANNEL.ticketTranscript, adminCategory, staffOnly);
@@ -923,34 +815,8 @@ async function setupServer(interaction) {
   await publishOrEditPanel(robuxChannel, 'price_via_login', viaLoginPricePayload(embedBase));
   await publishOrEditPanel(viaUsernameChannel, 'price_via_username', viaUsernamePricePayload(embedBase));
 
-  await publishOrEditPanel(rulesChannel, 'seed_rules', {
-    embeds: [
-      embedBase()
-        .setTitle('📜 WS STORE SERVER RULES')
-        .setDescription([
-          '1. Hormati semua member dan staff.',
-          '2. Dilarang spam, promosi tanpa izin, atau jualan di luar product resmi WS Store.',
-          '3. Jangan share password, cookie, OTP, atau data login.',
-          '4. Semua transaksi wajib lewat ticket agar tercatat.',
-          '5. Untuk transaksi pihak ketiga, gunakan jasa rekber / middleman resmi WS Store.',
-          '6. Refund mengikuti syarat dan bukti transaksi yang valid.'
-        ].join('\n'))
-    ]
-  });
-
-  await publishOrEditPanel(howToOrderChannel, 'seed_how_to_order', {
-    embeds: [
-      embedBase()
-        .setTitle('📌 CARA PEMESANAN')
-        .setDescription([
-          '1. Cek pricelist dan stock sesuai produk yang kamu butuhkan.',
-          '2. Buka ticket order.',
-          '3. Isi detail pesanan dan tunggu admin claim ticket.',
-          '4. Klik tombol payment untuk QRIS, lalu kirim bukti pembayaran.',
-          '5. Setelah order selesai, invoice akan dikirim ke DM dan transaksi masuk ke channel vouch/transaction.'
-        ].join('\n'))
-    ]
-  });
+  await publishOrEditPanel(rulesChannel, 'seed_rules', rulesPanelPayload(embedBase));
+  await publishOrEditPanel(howToOrderChannel, 'seed_how_to_order', howToOrderPanelPayload(embedBase));
 
   await interaction.editReply('Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, welcome invite tracker, dan admin transcript sudah dibuat.');
 }
