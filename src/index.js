@@ -444,7 +444,7 @@ async function ensureRole(guild, name, options = {}) {
 
 async function ensureCategory(guild, name, permissionOverwrites = []) {
   const existing = guild.channels.cache.find(
-    (channel) => channel.type === ChannelType.GuildCategory && channel.name === name
+    (channel) => channel.type === ChannelType.GuildCategory && channelMatchesName(channel, name)
   );
   if (existing) return existing;
 
@@ -455,13 +455,51 @@ async function ensureCategory(guild, name, permissionOverwrites = []) {
   });
 }
 
-async function ensureTextChannel(guild, name, parent, permissionOverwrites = []) {
-  const existing = guild.channels.cache.find(
-    (channel) => channel.type === ChannelType.GuildText && channel.name === name
+function channelNameKey(name) {
+  return String(name)
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[\u0300-\u036f\ufe0e\ufe0f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+}
+
+function channelMatchesName(channel, name) {
+  return channel.name === name || channelNameKey(channel.name) === channelNameKey(name);
+}
+
+function findManagedChannel(guild, type, name, parent) {
+  const matches = guild.channels.cache.filter(
+    (channel) => channel.type === type && channelMatchesName(channel, name)
   );
+
+  if (!matches.size) return null;
+  return matches.find((channel) => parent && channel.parentId === parent.id) || matches.first();
+}
+
+async function deleteDuplicateManagedChannels(guild, keepChannel, type, name) {
+  const duplicates = guild.channels.cache.filter(
+    (channel) =>
+      channel.id !== keepChannel.id
+      && channel.type === type
+      && channelMatchesName(channel, name)
+  );
+
+  for (const duplicate of duplicates.values()) {
+    if (duplicate.deletable) {
+      await duplicate.delete(`Removed duplicate WS Store channel: ${name}`).catch(() => null);
+    }
+  }
+}
+
+async function ensureTextChannel(guild, name, parent, permissionOverwrites = []) {
+  const existing = findManagedChannel(guild, ChannelType.GuildText, name, parent);
   if (existing) {
     if (parent && existing.parentId !== parent.id) await existing.setParent(parent);
+    if (existing.name !== name) await existing.setName(name).catch(() => null);
     if (permissionOverwrites.length) await existing.permissionOverwrites.set(permissionOverwrites).catch(() => null);
+    await deleteDuplicateManagedChannels(guild, existing, ChannelType.GuildText, name);
     return existing;
   }
 
@@ -474,12 +512,12 @@ async function ensureTextChannel(guild, name, parent, permissionOverwrites = [])
 }
 
 async function ensureVoiceChannel(guild, name, parent, permissionOverwrites = []) {
-  const existing = guild.channels.cache.find(
-    (channel) => channel.type === ChannelType.GuildVoice && channel.name === name
-  );
+  const existing = findManagedChannel(guild, ChannelType.GuildVoice, name, parent);
   if (existing) {
     if (parent && existing.parentId !== parent.id) await existing.setParent(parent);
+    if (existing.name !== name) await existing.setName(name).catch(() => null);
     if (permissionOverwrites.length) await existing.permissionOverwrites.set(permissionOverwrites).catch(() => null);
+    await deleteDuplicateManagedChannels(guild, existing, ChannelType.GuildVoice, name);
     return existing;
   }
 
@@ -492,8 +530,10 @@ async function ensureVoiceChannel(guild, name, parent, permissionOverwrites = []
 }
 
 async function deleteChannelByName(guild, name) {
-  const channel = guild.channels.cache.find((item) => item.name === name);
-  if (channel?.deletable) await channel.delete(`Removed unused WS Store channel: ${name}`).catch(() => null);
+  const channels = guild.channels.cache.filter((item) => channelMatchesName(item, name));
+  for (const channel of channels.values()) {
+    if (channel?.deletable) await channel.delete(`Removed unused WS Store channel: ${name}`).catch(() => null);
+  }
 }
 
 async function upsertPanel(type, message) {
@@ -554,17 +594,26 @@ async function refreshServerStats(guild) {
 
   for (const service of Object.keys(SERVICE_DEFINITIONS)) {
     const definition = SERVICE_DEFINITIONS[service];
-    const current = guild.channels.cache.find(
-      (channel) =>
+    const serviceNameKey = channelNameKey(definition.statsLabel);
+    const candidates = [...guild.channels.cache.values()]
+      .filter((channel) =>
         channel.type === ChannelType.GuildText
         && channel.parentId === statsCategory.id
-        && channel.name.toLowerCase().includes(definition.statsLabel.toLowerCase())
-    );
+        && channelNameKey(channel.name).includes(serviceNameKey)
+      )
+      .sort((left, right) => (left.rawPosition ?? left.position ?? 0) - (right.rawPosition ?? right.position ?? 0));
     const desiredName = statusChannelName(service, serviceIsOpen(guild.id, service));
+    const current = candidates.find((channel) => channelMatchesName(channel, desiredName)) || candidates[0];
 
     if (current) {
       if (current.name !== desiredName) await current.setName(desiredName).catch(() => null);
       await current.permissionOverwrites.set(overwrites).catch(() => null);
+
+      for (const duplicate of candidates) {
+        if (duplicate.id !== current.id && duplicate.deletable) {
+          await duplicate.delete(`Removed duplicate WS Store status channel: ${definition.statsLabel}`).catch(() => null);
+        }
+      }
     } else {
       await ensureTextChannel(guild, desiredName, statsCategory, overwrites);
     }
