@@ -28,6 +28,7 @@ import { startHealthServer } from './health.js';
 import { formatRupiah, isStoreOpen, operatingStatusText } from './time.js';
 
 const serviceStatusCache = new Map();
+let lastStoreOpenState = null;
 
 const client = new Client({
   intents: [
@@ -105,11 +106,11 @@ async function loadServiceStatuses(guildId) {
 function statusChannelName(service, isOpen) {
   const definition = SERVICE_DEFINITIONS[service];
   const statusIcon = isOpen ? '🟢' : '🔴';
-  return `${definition.statsEmoji || statusIcon}・${definition.statsLabel}-${statusIcon}`;
+  return `${statusIcon}｜${definition.voiceStatsLabel || definition.statsLabel}`;
 }
 
 function serviceStatusNameKeys(definition) {
-  return [...new Set([definition.statsLabel, definition.label].filter(Boolean).map((item) => channelNameKey(item)))];
+  return [...new Set([definition.statsLabel, definition.voiceStatsLabel, definition.label].filter(Boolean).map((item) => channelNameKey(item)))];
 }
 
 async function updateServiceStatus(guild, service, isOpen, updatedBy) {
@@ -498,21 +499,37 @@ async function refreshServerStats(guild) {
   const ownerRole = guild.roles.cache.find((role) => role.name === ROLE.owner);
   const adminRole = guild.roles.cache.find((role) => role.name === ROLE.admin);
 
-  const overwrites = [
+  const announcementOverwrites = [
     { id: everyone.id, deny: [PermissionsBitField.Flags.SendMessages], allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] }
   ];
   if (clientRole) {
-    overwrites.push({ id: clientRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] });
+    announcementOverwrites.push({ id: clientRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] });
   }
   if (ownerRole) {
-    overwrites.push({ id: ownerRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] });
+    announcementOverwrites.push({ id: ownerRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] });
   }
   if (adminRole) {
-    overwrites.push({ id: adminRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] });
+    announcementOverwrites.push({ id: adminRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] });
   }
 
-  const statsCategory = await ensureCategory(guild, CATEGORY.stats, overwrites);
-  await ensureTextChannel(guild, '📢・announcement-server', statsCategory, overwrites);
+  const ownerOnlyVoiceOverwrites = [
+    { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] }
+  ];
+  if (ownerRole) {
+    ownerOnlyVoiceOverwrites.push({
+      id: ownerRole.id,
+      allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak]
+    });
+  }
+  if (config.ownerDiscordId) {
+    ownerOnlyVoiceOverwrites.push({
+      id: config.ownerDiscordId,
+      allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak]
+    });
+  }
+
+  const statsCategory = await ensureCategory(guild, CATEGORY.stats, announcementOverwrites);
+  await ensureTextChannel(guild, '📢・announcement-server', statsCategory, announcementOverwrites);
 
   for (const service of Object.keys(SERVICE_DEFINITIONS)) {
     const definition = SERVICE_DEFINITIONS[service];
@@ -520,7 +537,7 @@ async function refreshServerStats(guild) {
 
     const serviceNameKeys = serviceStatusNameKeys(definition);
     const staleChannels = guild.channels.cache.filter((channel) =>
-      channel.type === ChannelType.GuildText
+      [ChannelType.GuildText, ChannelType.GuildVoice].includes(channel.type)
       && channel.parentId === statsCategory.id
       && serviceNameKeys.some((serviceNameKey) => channelNameKey(channel.name).includes(serviceNameKey))
     );
@@ -537,7 +554,7 @@ async function refreshServerStats(guild) {
     const serviceNameKeys = serviceStatusNameKeys(definition);
     const candidates = [...guild.channels.cache.values()]
       .filter((channel) =>
-        channel.type === ChannelType.GuildText
+        [ChannelType.GuildText, ChannelType.GuildVoice].includes(channel.type)
         && channel.parentId === statsCategory.id
         && serviceNameKeys.some((serviceNameKey) => channelNameKey(channel.name).includes(serviceNameKey))
       )
@@ -547,7 +564,12 @@ async function refreshServerStats(guild) {
 
     if (current) {
       if (current.name !== desiredName) await current.setName(desiredName).catch(() => null);
-      await current.permissionOverwrites.set(overwrites).catch(() => null);
+      if (current.type === ChannelType.GuildVoice) {
+        await current.permissionOverwrites.set(ownerOnlyVoiceOverwrites).catch(() => null);
+      } else {
+        await deleteChannel(current, `Replaced text WS Store status channel with voice channel: ${definition.statsLabel}`);
+        await ensureVoiceChannel(guild, desiredName, statsCategory, ownerOnlyVoiceOverwrites);
+      }
 
       for (const duplicate of candidates) {
         if (duplicate.id !== current.id && duplicate.deletable) {
@@ -555,9 +577,69 @@ async function refreshServerStats(guild) {
         }
       }
     } else {
-      await ensureTextChannel(guild, desiredName, statsCategory, overwrites);
+      await ensureVoiceChannel(guild, desiredName, statsCategory, ownerOnlyVoiceOverwrites);
     }
   }
+}
+
+function storeStatusAnnouncementPayload(guild, storeOpen) {
+  const verifiedRole = guild.roles.cache.find((role) => role.name === ROLE.client);
+  const mention = verifiedRole ? `<@&${verifiedRole.id}>` : '';
+  const title = storeOpen ? '🟢 OPEN ORDER!' : '🔴 CLOSE ORDER!';
+  const description = storeOpen
+    ? [
+      `WS Store sudah **OPEN** untuk order hari ini.`,
+      '',
+      `Silakan cek pricelist dan buka ticket sesuai kebutuhan kamu.`,
+      `Jam operasional ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}.`,
+      '',
+      '**Selamat berbelanja dengan harga terjangkau.**'
+    ]
+    : [
+      `WS Store sudah **CLOSE** untuk order reguler hari ini.`,
+      '',
+      `Open kembali besok ${String(config.openHour).padStart(2, '0')}:00 ${config.timezoneLabel} - ${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}.`,
+      '',
+      `Terima kasih banyak untuk semua yang sudah berbelanja hari ini di **${config.storeName}**.`,
+      '',
+      '**Good Night**'
+    ];
+
+  const embed = embedBase()
+    .setTitle(title)
+    .setDescription(description.join('\n'))
+    .setColor(storeOpen ? 0x2ecc71 : 0xe74c3c);
+
+  if (client.user) embed.setThumbnail(client.user.displayAvatarURL());
+
+  return {
+    content: mention || undefined,
+    embeds: [embed],
+    allowedMentions: verifiedRole ? { roles: [verifiedRole.id] } : { parse: [] }
+  };
+}
+
+async function sendStoreStatusAnnouncement(guild, storeOpen) {
+  const channel = guild.channels.cache.find((item) => channelMatchesName(item, '📢・announcement-server'));
+  if (!channel?.send) return;
+
+  await channel.send(storeStatusAnnouncementPayload(guild, storeOpen)).catch((error) => {
+    console.warn('Store status announcement failed:', error.message);
+  });
+}
+
+async function checkStoreStatusAnnouncement(guild, options = {}) {
+  const currentState = isStoreOpen();
+  if (lastStoreOpenState === null) {
+    lastStoreOpenState = currentState;
+    if (options.announceInitial) await sendStoreStatusAnnouncement(guild, currentState);
+    return;
+  }
+
+  if (currentState === lastStoreOpenState) return;
+
+  lastStoreOpenState = currentState;
+  await sendStoreStatusAnnouncement(guild, currentState);
 }
 
 async function setupServer(interaction) {
@@ -1412,6 +1494,7 @@ client.once('ready', async () => {
     await refreshInviteCache(guild).catch((error) => console.warn('Invite cache refresh failed:', error.message));
     await refreshServerStats(guild).catch((error) => console.warn('Server stats refresh failed:', error.message));
     await refreshPanels(guild).catch((error) => console.warn('Panel refresh failed:', error.message));
+    await checkStoreStatusAnnouncement(guild).catch((error) => console.warn('Store status announcement check failed:', error.message));
     await endDueGiveaways().catch((error) => console.warn('Giveaway auto-end failed:', error.message));
   }
 
@@ -1422,6 +1505,7 @@ client.once('ready', async () => {
   setInterval(async () => {
     const targetGuild = await client.guilds.fetch(config.guildId).catch(() => null);
     if (targetGuild) {
+      await checkStoreStatusAnnouncement(targetGuild).catch((error) => console.warn('Store status announcement check failed:', error.message));
       await refreshServerStats(targetGuild).catch((error) => console.warn('Server stats refresh failed:', error.message));
       await refreshPanels(targetGuild).catch((error) => console.warn('Panel refresh failed:', error.message));
     }

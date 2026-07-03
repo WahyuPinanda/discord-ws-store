@@ -52,30 +52,35 @@ export const SERVICE_DEFINITIONS = {
   limited: {
     label: 'LIMITED',
     statsLabel: 'limited',
+    voiceStatsLabel: 'LIMITED ITEM',
     statsEmoji: '💎',
     showInStats: true
   },
   'via-login': {
     label: 'VIA LOGIN',
     statsLabel: 'via-login',
+    voiceStatsLabel: 'VILOG & PREM',
     statsEmoji: '🧁',
     showInStats: true
   },
   'via-username': {
     label: 'VIA USERNAME',
     statsLabel: 'via-username',
+    voiceStatsLabel: 'VIA USERNAME',
     statsEmoji: '🧬',
     showInStats: true
   },
   'group-payout': {
     label: 'GROUP PAYOUT',
     statsLabel: 'grup-payout',
+    voiceStatsLabel: 'PAYOUT INSTANT',
     statsEmoji: '💳',
     showInStats: true
   },
   'gift-gamepass': {
     label: 'GIFT GAMEPASS',
     statsLabel: 'gift-gamepass',
+    voiceStatsLabel: 'GAMEPASS & GIG',
     statsEmoji: '🎮',
     showInStats: true
   }
