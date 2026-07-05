@@ -2,6 +2,7 @@ export const ROLE = {
   owner: '👑 Owner',
   admin: '🛡️ Admin',
   middleman: '🤝 Middleman / Rekber Staff',
+  rolimonsBot: '🤖 Rolimons Bot',
   creator: '🎬 Content Creator',
   booster: '🚀 Server Booster',
   customer: '🛒 Customer',
@@ -61,8 +62,8 @@ export const SERVICE_DEFINITIONS = {
   'via-login': {
     label: 'VIA LOGIN',
     statsLabel: 'via-login',
-    voiceStatsLabel: 'VILOG & PREM',
-    voiceAliases: ['VILOG'],
+    voiceStatsLabel: 'VILOG',
+    voiceAliases: ['VILOG & PREM'],
     statsEmoji: '🧁',
     showInStats: true
   },

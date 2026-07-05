@@ -59,6 +59,16 @@ create table if not exists public.service_statuses (
   primary key (guild_id, service)
 );
 
+create table if not exists public.panel_text_overrides (
+  guild_id text not null,
+  type text not null,
+  title text,
+  description text,
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, type)
+);
+
 create table if not exists public.giveaways (
   id bigserial primary key,
   guild_id text not null,
@@ -102,11 +112,17 @@ create trigger service_statuses_touch_updated_at
 before update on public.service_statuses
 for each row execute function public.touch_updated_at();
 
+drop trigger if exists panel_text_overrides_touch_updated_at on public.panel_text_overrides;
+create trigger panel_text_overrides_touch_updated_at
+before update on public.panel_text_overrides
+for each row execute function public.touch_updated_at();
+
 alter table public.customers disable row level security;
 alter table public.tickets disable row level security;
 alter table public.transactions disable row level security;
 alter table public.ticket_panels disable row level security;
 alter table public.bot_heartbeat disable row level security;
 alter table public.service_statuses disable row level security;
+alter table public.panel_text_overrides disable row level security;
 alter table public.giveaways disable row level security;
 alter table public.giveaway_entries disable row level security;

@@ -12,6 +12,13 @@ const serviceCommands = [
   ['gift-gamepass', 'Gift gamepass']
 ];
 
+const editablePanels = [
+  ['price_via_login', 'Price Via Login'],
+  ['price_via_username', 'Price Via Username'],
+  ['market_item_tumbal_trade', 'Item Tumbal Trade'],
+  ['market_value_update', 'Value Update Realtime']
+];
+
 function addServiceSubcommands(command) {
   for (const [name, description] of serviceCommands) {
     command.addSubcommand((subcommand) =>
@@ -54,6 +61,60 @@ const commands = [
     .setDescription('Cek total transaksi dan tier customer.')
     .addUserOption((option) =>
       option.setName('user').setDescription('Customer yang dicek').setRequired(false)
+    ),
+  new SlashCommandBuilder()
+    .setName('open-ticket')
+    .setDescription('Staff membuka ticket untuk member tertentu, termasuk di luar jam operasional.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addUserOption((option) =>
+      option.setName('user').setDescription('Member yang dibuatkan ticket').setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName('type')
+        .setDescription('Jenis ticket')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Order', value: 'order' },
+          { name: 'Rekber', value: 'rekber' },
+          { name: 'Support', value: 'support' }
+        )
+    ),
+  new SlashCommandBuilder()
+    .setName('set-panel-text')
+    .setDescription('Ubah teks panel market/pricelist tanpa edit kode.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption((option) =>
+      option
+        .setName('panel')
+        .setDescription('Panel yang ingin diubah')
+        .setRequired(true)
+        .addChoices(...editablePanels.map(([value, name]) => ({ name, value })))
+    )
+    .addStringOption((option) =>
+      option
+        .setName('description')
+        .setDescription('Isi teks embed. Gunakan Shift+Enter untuk baris baru.')
+        .setRequired(true)
+        .setMaxLength(4000)
+    )
+    .addStringOption((option) =>
+      option
+        .setName('title')
+        .setDescription('Judul embed opsional')
+        .setRequired(false)
+        .setMaxLength(256)
+    ),
+  new SlashCommandBuilder()
+    .setName('reset-panel-text')
+    .setDescription('Kembalikan teks panel market/pricelist ke default kode.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption((option) =>
+      option
+        .setName('panel')
+        .setDescription('Panel yang ingin direset')
+        .setRequired(true)
+        .addChoices(...editablePanels.map(([value, name]) => ({ name, value })))
     ),
   addServiceSubcommands(
     new SlashCommandBuilder()

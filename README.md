@@ -145,9 +145,16 @@ Penting: heartbeat hanya berjalan kalau bot hidup. Kalau bot dimatikan, VPS mati
 /refresh-panels
 /add-transaction buyer:@user amount:1000000 product:Robux payment:QRIS
 /customer user:@user
+/open-ticket user:@user type:order
+/set-panel-text panel:price_via_login description:...
+/reset-panel-text panel:price_via_login
 ```
 
 `/add-transaction` berguna untuk transaksi manual di luar ticket.
+`/open-ticket` berguna untuk staff membuka ticket member tertentu, termasuk di luar jam operasional.
+`/set-panel-text` menyimpan teks panel market/pricelist ke Supabase, jadi perubahan harga tidak perlu edit kode.
+
+Untuk value update Rolimons, invite bot Rolimons official secara terpisah lalu beri role `🤖 Rolimons Bot`. Setup WS Store sudah menyiapkan permission role itu agar bisa mengirim embed di channel `value-update-realtime`.
 
 ## 9. QRIS
 

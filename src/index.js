@@ -28,7 +28,9 @@ import { startHealthServer } from './health.js';
 import { formatRupiah, isStoreOpen, operatingStatusText } from './time.js';
 
 const serviceStatusCache = new Map();
+const panelTextOverrideCache = new Map();
 let lastStoreOpenState = null;
+let panelTextOverrideSchemaWarningShown = false;
 
 const client = new Client({
   intents: [
@@ -80,6 +82,21 @@ function serviceCacheKey(guildId, service) {
   return `${guildId}:${service}`;
 }
 
+function panelTextOverrideKey(guildId, type) {
+  return `${guildId}:${type}`;
+}
+
+function panelTextOverride(guildId, type) {
+  return panelTextOverrideCache.get(panelTextOverrideKey(guildId, type)) || {};
+}
+
+function isPanelTextOverrideSchemaMissing(error) {
+  const message = error?.message || '';
+  return error?.code === 'PGRST205'
+    || message.includes("Could not find the table 'public.panel_text_overrides'")
+    || message.includes('schema cache');
+}
+
 function normalizeServiceName(service) {
   return service === 'via_login' ? 'via-login'
     : service === 'via_username' ? 'via-username'
@@ -112,6 +129,37 @@ async function loadServiceStatuses(guildId) {
   for (const row of data || []) {
     const service = normalizeServiceName(row.service);
     serviceStatusCache.set(serviceCacheKey(guildId, service), Boolean(row.is_open));
+  }
+}
+
+async function loadPanelTextOverrides(guildId) {
+  const { data, error } = await supabase
+    .from('panel_text_overrides')
+    .select('type,title,description')
+    .eq('guild_id', guildId);
+
+  if (error) {
+    if (isPanelTextOverrideSchemaMissing(error)) {
+      if (!panelTextOverrideSchemaWarningShown) {
+        console.warn('panel_text_overrides table is missing. Run the latest Supabase schema to enable editable panel text.');
+        panelTextOverrideSchemaWarningShown = true;
+      }
+      return;
+    }
+
+    console.warn('Failed to load panel text overrides:', error.message);
+    return;
+  }
+
+  for (const key of panelTextOverrideCache.keys()) {
+    if (key.startsWith(`${guildId}:`)) panelTextOverrideCache.delete(key);
+  }
+
+  for (const row of data || []) {
+    panelTextOverrideCache.set(panelTextOverrideKey(guildId, row.type), {
+      title: row.title || undefined,
+      description: row.description || undefined
+    });
   }
 }
 
@@ -510,6 +558,33 @@ async function publishOrEditPanel(channel, type, payload) {
   return message;
 }
 
+function managedPanelPayload(guildId, type) {
+  const overrides = panelTextOverride(guildId, type);
+  const panelPayloads = {
+    verify: () => verifyPanelPayload(),
+    ticket_order: () => ticketPanelPayload('order'),
+    ticket_rekber: () => ticketPanelPayload('rekber'),
+    ticket_support: () => ticketPanelPayload('support'),
+    market_value_update: () => valueUpdatePayload(embedBase, overrides),
+    market_item_tumbal_trade: () => itemTumbalTradePayload(embedBase, overrides),
+    price_via_login: () => viaLoginPricePayload(embedBase, overrides),
+    price_via_username: () => viaUsernamePricePayload(embedBase, overrides),
+    seed_rules: () => rulesPanelPayload(embedBase),
+    seed_how_to_order: () => howToOrderPanelPayload(embedBase)
+  };
+
+  return panelPayloads[type]?.();
+}
+
+function editablePanelTypes() {
+  return new Set([
+    'market_value_update',
+    'market_item_tumbal_trade',
+    'price_via_login',
+    'price_via_username'
+  ]);
+}
+
 async function refreshServerStats(guild) {
   const everyone = guild.roles.everyone;
   const clientRole = findVerifiedRole(guild);
@@ -665,6 +740,7 @@ async function setupServer(interaction) {
     permissions: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ManageMessages]
   });
   const middlemanRole = await ensureRole(guild, ROLE.middleman, { color: 0x1abc9c, hoist: true });
+  const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db });
   await ensureRole(guild, ROLE.creator, { color: 0x9b59b6 });
   await ensureRole(guild, ROLE.booster, { color: 0xff73fa });
   await ensureRole(guild, ROLE.customer, { color: 0x2ecc71 });
@@ -689,6 +765,20 @@ async function setupServer(interaction) {
     { id: ownerRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
     { id: adminRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
     { id: middlemanRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] }
+  ];
+
+  const valueUpdatePublish = [
+    ...ownerAdminPublish,
+    {
+      id: rolimonsBotRole.id,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+        PermissionsBitField.Flags.EmbedLinks,
+        PermissionsBitField.Flags.AttachFiles
+      ]
+    }
   ];
 
   const publicReadOnly = [
@@ -739,7 +829,6 @@ async function setupServer(interaction) {
     ...staffAllow
   ]);
   const loungeCategory = await ensureCategory(guild, CATEGORY.lounge, publicChat);
-  const communityCategory = await ensureCategory(guild, CATEGORY.community, publicChat);
   const transactionCategory = await ensureCategory(guild, CATEGORY.transaction, transactionReadOnly);
   const adminCategory = await ensureCategory(guild, CATEGORY.admin, [
     { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
@@ -748,6 +837,7 @@ async function setupServer(interaction) {
   ]);
 
   await loadServiceStatuses(guild.id);
+  await loadPanelTextOverrides(guild.id);
   await refreshServerStats(guild);
 
   await ensureTextChannel(guild, CHANNEL.welcome, gateCategory, welcomeReadOnly);
@@ -769,7 +859,7 @@ async function setupServer(interaction) {
   const robuxChannel = await ensureTextChannel(guild, '💎・robux-instant-vilog', marketCategory, ownerAdminPublish);
   const viaUsernameChannel = await ensureTextChannel(guild, CHANNEL.robuxViaUsername, marketCategory, ownerAdminPublish);
   await ensureTextChannel(guild, '🌟・group-payout', marketCategory, ownerAdminPublish);
-  const valueUpdateChannel = await ensureTextChannel(guild, CHANNEL.valueUpdate, marketCategory, ownerAdminPublish);
+  const valueUpdateChannel = await ensureTextChannel(guild, CHANNEL.valueUpdate, marketCategory, valueUpdatePublish);
 
   const ticketOrderChannel = await ensureTextChannel(guild, CHANNEL.ticketOrder, ticketCategory, publicReadOnly);
   const ticketRekberChannel = await ensureTextChannel(guild, CHANNEL.ticketRekber, ticketCategory, publicReadOnly);
@@ -779,10 +869,10 @@ async function setupServer(interaction) {
   await ensureTextChannel(guild, '🏷️・check-payout', loungeCategory, publicChat);
   await ensureTextChannel(guild, '💎・check-tumbal-limited', loungeCategory, publicChat);
   await ensureTextChannel(guild, '❌・report-scammer', loungeCategory, publicChat);
-  await ensureTextChannel(guild, '💬・chit-chat', communityCategory, publicChat);
-  await ensureTextChannel(guild, '🧾・vouches', communityCategory, publicChat);
-  await ensureTextChannel(guild, CHANNEL.giveaways, communityCategory, publicReadOnly);
-  await ensureVoiceChannel(guild, 'Room 1', communityCategory, publicVoice);
+  await ensureTextChannel(guild, '💬・chit-chat', loungeCategory, publicChat);
+  await ensureTextChannel(guild, '🧾・vouches', loungeCategory, publicChat);
+  await ensureTextChannel(guild, CHANNEL.giveaways, loungeCategory, publicReadOnly);
+  await ensureVoiceChannel(guild, 'Room 1', loungeCategory, publicVoice);
 
   await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, transactionReadOnly);
   await ensureTextChannel(guild, '🧾・rekber-history', transactionCategory, transactionReadOnly);
@@ -797,10 +887,10 @@ async function setupServer(interaction) {
   await publishOrEditPanel(ticketRekberChannel, 'ticket_rekber', ticketPanelPayload('rekber'));
   await publishOrEditPanel(ticketSupportChannel, 'ticket_support', ticketPanelPayload('support'));
 
-  await publishOrEditPanel(valueUpdateChannel, 'market_value_update', valueUpdatePayload(embedBase));
-  await publishOrEditPanel(itemTumbalChannel, 'market_item_tumbal_trade', itemTumbalTradePayload(embedBase));
-  await publishOrEditPanel(robuxChannel, 'price_via_login', viaLoginPricePayload(embedBase));
-  await publishOrEditPanel(viaUsernameChannel, 'price_via_username', viaUsernamePricePayload(embedBase));
+  await publishOrEditPanel(valueUpdateChannel, 'market_value_update', managedPanelPayload(guild.id, 'market_value_update'));
+  await publishOrEditPanel(itemTumbalChannel, 'market_item_tumbal_trade', managedPanelPayload(guild.id, 'market_item_tumbal_trade'));
+  await publishOrEditPanel(robuxChannel, 'price_via_login', managedPanelPayload(guild.id, 'price_via_login'));
+  await publishOrEditPanel(viaUsernameChannel, 'price_via_username', managedPanelPayload(guild.id, 'price_via_username'));
 
   await publishOrEditPanel(rulesChannel, 'seed_rules', rulesPanelPayload(embedBase));
   await publishOrEditPanel(howToOrderChannel, 'seed_how_to_order', howToOrderPanelPayload(embedBase));
@@ -809,26 +899,15 @@ async function setupServer(interaction) {
 }
 
 async function refreshPanels(guild) {
+  await loadPanelTextOverrides(guild.id);
+
   const { data: panels } = await supabase
     .from('ticket_panels')
     .select('*')
     .eq('guild_id', guild.id);
 
-  const panelPayloads = {
-    verify: () => verifyPanelPayload(),
-    ticket_order: () => ticketPanelPayload('order'),
-    ticket_rekber: () => ticketPanelPayload('rekber'),
-    ticket_support: () => ticketPanelPayload('support'),
-    market_value_update: () => valueUpdatePayload(embedBase),
-    market_item_tumbal_trade: () => itemTumbalTradePayload(embedBase),
-    price_via_login: () => viaLoginPricePayload(embedBase),
-    price_via_username: () => viaUsernamePricePayload(embedBase),
-    seed_rules: () => rulesPanelPayload(embedBase),
-    seed_how_to_order: () => howToOrderPanelPayload(embedBase)
-  };
-
   for (const panel of panels || []) {
-    const payload = panelPayloads[panel.type]?.();
+    const payload = managedPanelPayload(guild.id, panel.type);
     if (!payload) continue;
 
     try {
@@ -853,6 +932,92 @@ async function handleVerify(interaction) {
     content: 'Verifikasi berhasil. Selamat datang di WS Store Official!',
     flags: MessageFlags.Ephemeral
   });
+}
+
+async function createTicketForMember(interaction, type, openerMember, options = {}) {
+  const { bypassStoreHours = false, openedByStaff = false } = options;
+  const openerUser = openerMember.user;
+
+  const { data: existing } = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('guild_id', interaction.guildId)
+    .eq('opener_id', openerUser.id)
+    .eq('type', type)
+    .in('status', ['open', 'claimed'])
+    .maybeSingle();
+
+  if (existing?.channel_id) {
+    return { existingChannelId: existing.channel_id };
+  }
+
+  const { data: ticket, error } = await supabase
+    .from('tickets')
+    .insert({
+      type,
+      guild_id: interaction.guildId,
+      opener_id: openerUser.id,
+      opener_tag: openerUser.tag
+    })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+
+  const activeCategory = interaction.guild.channels.cache.find(
+    (channel) => channel.type === ChannelType.GuildCategory && channel.name === CATEGORY.activeTicket
+  );
+  const overwrites = [
+    { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+    { id: openerMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles] }
+  ];
+
+  for (const roleName of staffRoleNames()) {
+    const role = interaction.guild.roles.cache.find((item) => item.name === roleName);
+    if (role) {
+      overwrites.push({
+        id: role.id,
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
+      });
+    }
+  }
+
+  const channel = await interaction.guild.channels.create({
+    name: `ticket-${ticket.id}`,
+    type: ChannelType.GuildText,
+    parent: activeCategory,
+    topic: `${ticketTypeLabel(type)} | opener:${openerUser.id} | ticket:${ticket.id}`,
+    permissionOverwrites: overwrites
+  });
+
+  await supabase
+    .from('tickets')
+    .update({ channel_id: channel.id })
+    .eq('id', ticket.id);
+
+  await channel.send({
+    content: `<@${openerUser.id}>`,
+    embeds: [
+      embedBase()
+        .setTitle('🎟️ Ticket Created')
+        .setDescription([
+          `Hello <@${openerUser.id}>! Terima kasih telah membuka ticket.`,
+          openedByStaff ? `Ticket ini dibukakan oleh staff <@${interaction.user.id}>.` : null,
+          bypassStoreHours ? 'Catatan: ticket ini dibuka oleh staff di luar jam operasional.' : null,
+          '',
+          type === 'order'
+            ? '**Form order:**\nProduk:\nJumlah:\nUsername Roblox:\nMetode pembayaran:\nCatatan:'
+            : type === 'rekber'
+              ? '**Form rekber:**\nBuyer/Seller:\nBarang transaksi:\nNominal:\nPihak lawan:\nBukti kesepakatan:'
+              : '**Form support:**\nMasalah:\nOrder ID jika ada:\nBukti screenshot:\nPenjelasan:',
+          '',
+          'Silakan isi form di atas dan tunggu admin menerima ticket.'
+        ].filter(Boolean).join('\n'))
+    ],
+    components: ticketControlRows(type)
+  });
+
+  return { channelId: channel.id };
 }
 
 async function createTicket(interaction, type) {
@@ -882,91 +1047,49 @@ async function createTicket(interaction, type) {
     return;
   }
 
-  const { data: existing } = await supabase
-    .from('tickets')
-    .select('*')
-    .eq('guild_id', interaction.guildId)
-    .eq('opener_id', interaction.user.id)
-    .eq('type', type)
-    .in('status', ['open', 'claimed'])
-    .maybeSingle();
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const result = await createTicketForMember(interaction, type, interaction.member);
+  if (result.existingChannelId) {
+    await interaction.editReply(`Kamu masih punya ticket aktif: <#${result.existingChannelId}>`);
+    return;
+  }
 
-  if (existing?.channel_id) {
+  await interaction.editReply(`Ticket berhasil dibuat: <#${result.channelId}>`);
+}
+
+async function openTicketForUser(interaction) {
+  if (!memberIsStaff(interaction.member)) {
     await interaction.reply({
-      content: `Kamu masih punya ticket aktif: <#${existing.channel_id}>`,
+      content: 'Hanya staff yang bisa membuka ticket untuk member lain.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  const targetUser = interaction.options.getUser('user', true);
+  const type = interaction.options.getString('type', true);
+  const openerMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+
+  if (!openerMember) {
+    await interaction.reply({
+      content: 'Member tidak ditemukan di server ini.',
       flags: MessageFlags.Ephemeral
     });
     return;
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const result = await createTicketForMember(interaction, type, openerMember, {
+    bypassStoreHours: true,
+    openedByStaff: true
+  });
 
-  const { data: ticket, error } = await supabase
-    .from('tickets')
-    .insert({
-      type,
-      guild_id: interaction.guildId,
-      opener_id: interaction.user.id,
-      opener_tag: interaction.user.tag
-    })
-    .select('*')
-    .single();
-
-  if (error) throw error;
-
-  const activeCategory = interaction.guild.channels.cache.find(
-    (channel) => channel.type === ChannelType.GuildCategory && channel.name === CATEGORY.activeTicket
-  );
-  const opener = interaction.member;
-  const overwrites = [
-    { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    { id: opener.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles] }
-  ];
-
-  for (const roleName of staffRoleNames()) {
-    const role = interaction.guild.roles.cache.find((item) => item.name === roleName);
-    if (role) {
-      overwrites.push({
-        id: role.id,
-        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
-      });
-    }
+  if (result.existingChannelId) {
+    await interaction.editReply(`<@${targetUser.id}> masih punya ticket aktif: <#${result.existingChannelId}>`);
+    return;
   }
 
-  const channel = await interaction.guild.channels.create({
-    name: `ticket-${ticket.id}`,
-    type: ChannelType.GuildText,
-    parent: activeCategory,
-    topic: `${ticketTypeLabel(type)} | opener:${interaction.user.id} | ticket:${ticket.id}`,
-    permissionOverwrites: overwrites
-  });
-
-  await supabase
-    .from('tickets')
-    .update({ channel_id: channel.id })
-    .eq('id', ticket.id);
-
-  await channel.send({
-    content: `<@${interaction.user.id}>`,
-    embeds: [
-      embedBase()
-        .setTitle('🎟️ Ticket Created')
-        .setDescription([
-          `Hello <@${interaction.user.id}>! Terima kasih telah membuka ticket.`,
-          '',
-          type === 'order'
-            ? '**Form order:**\nProduk:\nJumlah:\nUsername Roblox:\nMetode pembayaran:\nCatatan:'
-            : type === 'rekber'
-              ? '**Form rekber:**\nBuyer/Seller:\nBarang transaksi:\nNominal:\nPihak lawan:\nBukti kesepakatan:'
-              : '**Form support:**\nMasalah:\nOrder ID jika ada:\nBukti screenshot:\nPenjelasan:',
-          '',
-          'Silakan isi form di atas dan tunggu admin menerima ticket.'
-        ].join('\n'))
-    ],
-    components: ticketControlRows(type)
-  });
-
-  await interaction.editReply(`Ticket berhasil dibuat: <#${channel.id}>`);
+  await interaction.editReply(`Ticket ${ticketTypeLabel(type)} untuk <@${targetUser.id}> berhasil dibuat: <#${result.channelId}>`);
 }
 
 async function claimTicket(interaction) {
@@ -1433,6 +1556,90 @@ async function showCustomer(interaction) {
   });
 }
 
+async function setPanelText(interaction) {
+  if (!memberIsStaff(interaction.member)) {
+    await interaction.reply({
+      content: 'Hanya staff yang bisa mengubah teks panel.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  const type = interaction.options.getString('panel', true);
+  const description = interaction.options.getString('description', true);
+  const title = interaction.options.getString('title') || null;
+
+  if (!editablePanelTypes().has(type)) {
+    await interaction.reply({
+      content: 'Panel ini tidak bisa diedit lewat command.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const { error } = await supabase
+    .from('panel_text_overrides')
+    .upsert({
+      guild_id: interaction.guildId,
+      type,
+      title,
+      description,
+      updated_by: interaction.user.id
+    }, { onConflict: 'guild_id,type' });
+
+  if (error) {
+    if (isPanelTextOverrideSchemaMissing(error)) {
+      await interaction.editReply('Table `panel_text_overrides` belum ada. Jalankan schema Supabase terbaru dulu, lalu coba lagi.');
+      return;
+    }
+    throw error;
+  }
+
+  await refreshPanels(interaction.guild);
+  await interaction.editReply('Teks panel berhasil diupdate dan panel sudah direfresh.');
+}
+
+async function resetPanelText(interaction) {
+  if (!memberIsStaff(interaction.member)) {
+    await interaction.reply({
+      content: 'Hanya staff yang bisa reset teks panel.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  const type = interaction.options.getString('panel', true);
+
+  if (!editablePanelTypes().has(type)) {
+    await interaction.reply({
+      content: 'Panel ini tidak bisa direset lewat command.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const { error } = await supabase
+    .from('panel_text_overrides')
+    .delete()
+    .eq('guild_id', interaction.guildId)
+    .eq('type', type);
+
+  if (error) {
+    if (isPanelTextOverrideSchemaMissing(error)) {
+      await interaction.editReply('Table `panel_text_overrides` belum ada. Jalankan schema Supabase terbaru dulu, lalu coba lagi.');
+      return;
+    }
+    throw error;
+  }
+
+  await refreshPanels(interaction.guild);
+  await interaction.editReply('Teks panel sudah dikembalikan ke default dan panel sudah direfresh.');
+}
+
 async function handleServiceStatusCommand(interaction, isOpen) {
   if (!memberIsStaff(interaction.member)) {
     await interaction.reply({
@@ -1492,6 +1699,9 @@ client.on('interactionCreate', async (interaction) => {
       }
       if (interaction.commandName === 'add-transaction') await addManualTransaction(interaction);
       if (interaction.commandName === 'customer') await showCustomer(interaction);
+      if (interaction.commandName === 'open-ticket') await openTicketForUser(interaction);
+      if (interaction.commandName === 'set-panel-text') await setPanelText(interaction);
+      if (interaction.commandName === 'reset-panel-text') await resetPanelText(interaction);
       if (interaction.commandName === 'open') await handleServiceStatusCommand(interaction, true);
       if (interaction.commandName === 'close') await handleServiceStatusCommand(interaction, false);
       if (interaction.commandName === 'giveaway') await handleGiveawayCommand(interaction);
