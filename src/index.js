@@ -17,13 +17,13 @@ import {
 } from 'discord.js';
 import { existsSync } from 'node:fs';
 import { config } from './config.js';
-import { CATEGORY, CHANNEL, REKBER_IMAGE_PATH, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFY_IMAGE_PATH } from './constants.js';
+import { CATEGORY, CHANNEL, REKBER_IMAGE_PATH, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFIED_ROLE_ALIASES, VERIFY_IMAGE_PATH } from './constants.js';
 import { keepSupabaseAwake, supabase } from './db.js';
 import { createAntiSpamFeature } from './features/anti-spam.js';
 import { createGiveawayFeature } from './features/giveaways.js';
 import { howToOrderPanelPayload, rulesPanelPayload } from './features/info-panels.js';
 import { createInviteTrackerFeature } from './features/invite-tracker.js';
-import { valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './features/market.js';
+import { itemTumbalTradePayload, valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './features/market.js';
 import { startHealthServer } from './health.js';
 import { formatRupiah, isStoreOpen, operatingStatusText } from './time.js';
 
@@ -52,6 +52,18 @@ function embedBase() {
 
 function staffRoleNames() {
   return [ROLE.owner, ROLE.admin, ROLE.middleman];
+}
+
+function findRoleByNames(guild, names) {
+  return guild.roles.cache.find((role) => names.includes(role.name));
+}
+
+function findVerifiedRole(guild) {
+  return findRoleByNames(guild, [ROLE.client, ...VERIFIED_ROLE_ALIASES]);
+}
+
+function memberIsVerified(member) {
+  return member.roles.cache.some((role) => [ROLE.client, ...VERIFIED_ROLE_ALIASES].includes(role.name));
 }
 
 function memberIsStaff(member) {
@@ -366,46 +378,15 @@ function findManagedChannel(guild, type, name, parent) {
   );
 
   if (!matches.size) return null;
-  return matches.find((channel) => parent && channel.parentId === parent.id) || matches.first();
-}
-
-async function deleteDuplicateManagedChannels(guild, keepChannel, type, name) {
-  const duplicates = guild.channels.cache.filter(
-    (channel) =>
-      channel.id !== keepChannel.id
-      && channel.type === type
-      && channelMatchesName(channel, name)
-  );
-
-  for (const duplicate of duplicates.values()) {
-    if (duplicate.deletable) {
-      await duplicate.delete(`Removed duplicate WS Store channel: ${name}`).catch(() => null);
-    }
-  }
-}
-
-async function deleteDuplicateChannelsByTypes(guild, keepChannel, types, name) {
-  const duplicates = guild.channels.cache.filter(
-    (channel) =>
-      channel.id !== keepChannel.id
-      && types.includes(channel.type)
-      && channelMatchesName(channel, name)
-  );
-
-  for (const duplicate of duplicates.values()) {
-    if (duplicate.deletable) {
-      await duplicate.delete(`Removed duplicate WS Store channel: ${name}`).catch(() => null);
-    }
-  }
+  if (parent) return matches.find((channel) => channel.parentId === parent.id) || null;
+  return matches.first();
 }
 
 async function ensureTextChannel(guild, name, parent, permissionOverwrites = []) {
   const existing = findManagedChannel(guild, ChannelType.GuildText, name, parent);
   if (existing) {
-    if (parent && existing.parentId !== parent.id) await existing.setParent(parent);
     if (existing.name !== name) await existing.setName(name).catch(() => null);
     if (permissionOverwrites.length) await existing.permissionOverwrites.set(permissionOverwrites).catch(() => null);
-    await deleteDuplicateManagedChannels(guild, existing, ChannelType.GuildText, name);
     return existing;
   }
 
@@ -418,13 +399,10 @@ async function ensureTextChannel(guild, name, parent, permissionOverwrites = [])
 }
 
 async function ensureAnnouncementChannel(guild, name, parent, permissionOverwrites = []) {
-  const targetTypes = [ChannelType.GuildAnnouncement, ChannelType.GuildText];
   const existingAnnouncement = findManagedChannel(guild, ChannelType.GuildAnnouncement, name, parent);
   if (existingAnnouncement) {
-    if (parent && existingAnnouncement.parentId !== parent.id) await existingAnnouncement.setParent(parent).catch(() => null);
     if (existingAnnouncement.name !== name) await existingAnnouncement.setName(name).catch(() => null);
     if (permissionOverwrites.length) await existingAnnouncement.permissionOverwrites.set(permissionOverwrites).catch(() => null);
-    await deleteDuplicateChannelsByTypes(guild, existingAnnouncement, targetTypes, name);
     return existingAnnouncement;
   }
 
@@ -432,13 +410,11 @@ async function ensureAnnouncementChannel(guild, name, parent, permissionOverwrit
   if (existingText) {
     try {
       const converted = await existingText.setType(ChannelType.GuildAnnouncement);
-      if (parent && converted.parentId !== parent.id) await converted.setParent(parent).catch(() => null);
       if (converted.name !== name) await converted.setName(name).catch(() => null);
       if (permissionOverwrites.length) await converted.permissionOverwrites.set(permissionOverwrites).catch(() => null);
-      await deleteDuplicateChannelsByTypes(guild, converted, targetTypes, name);
       return converted;
     } catch {
-      await deleteChannel(existingText, `Replaced text WS Store channel with announcement channel: ${name}`);
+      // Keep the text channel intact and create a new announcement channel below.
     }
   }
 
@@ -448,17 +424,14 @@ async function ensureAnnouncementChannel(guild, name, parent, permissionOverwrit
     parent,
     permissionOverwrites
   });
-  await deleteDuplicateChannelsByTypes(guild, channel, targetTypes, name);
   return channel;
 }
 
 async function ensureVoiceChannel(guild, name, parent, permissionOverwrites = []) {
   const existing = findManagedChannel(guild, ChannelType.GuildVoice, name, parent);
   if (existing) {
-    if (parent && existing.parentId !== parent.id) await existing.setParent(parent);
     if (existing.name !== name) await existing.setName(name).catch(() => null);
     if (permissionOverwrites.length) await existing.permissionOverwrites.set(permissionOverwrites).catch(() => null);
-    await deleteDuplicateManagedChannels(guild, existing, ChannelType.GuildVoice, name);
     return existing;
   }
 
@@ -468,17 +441,6 @@ async function ensureVoiceChannel(guild, name, parent, permissionOverwrites = []
     parent,
     permissionOverwrites
   });
-}
-
-async function deleteChannelByName(guild, name) {
-  const channels = guild.channels.cache.filter((item) => channelMatchesName(item, name));
-  for (const channel of channels.values()) {
-    if (channel?.deletable) await channel.delete(`Removed unused WS Store channel: ${name}`).catch(() => null);
-  }
-}
-
-async function deleteChannel(channel, reason) {
-  if (channel?.deletable) await channel.delete(reason).catch(() => null);
 }
 
 const {
@@ -550,7 +512,7 @@ async function publishOrEditPanel(channel, type, payload) {
 
 async function refreshServerStats(guild) {
   const everyone = guild.roles.everyone;
-  const clientRole = guild.roles.cache.find((role) => role.name === ROLE.client);
+  const clientRole = findVerifiedRole(guild);
   const ownerRole = guild.roles.cache.find((role) => role.name === ROLE.owner);
   const adminRole = guild.roles.cache.find((role) => role.name === ROLE.admin);
 
@@ -567,17 +529,30 @@ async function refreshServerStats(guild) {
     announcementOverwrites.push({ id: adminRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] });
   }
 
-  const ownerOnlyVoiceOverwrites = [
+  const statsVoiceOverwrites = [
     { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect] }
   ];
+  if (clientRole) {
+    statsVoiceOverwrites.push({
+      id: clientRole.id,
+      allow: [PermissionsBitField.Flags.ViewChannel],
+      deny: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak]
+    });
+  }
   if (ownerRole) {
-    ownerOnlyVoiceOverwrites.push({
+    statsVoiceOverwrites.push({
       id: ownerRole.id,
       allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak]
     });
   }
+  if (adminRole) {
+    statsVoiceOverwrites.push({
+      id: adminRole.id,
+      allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak]
+    });
+  }
   if (config.ownerDiscordId) {
-    ownerOnlyVoiceOverwrites.push({
+    statsVoiceOverwrites.push({
       id: config.ownerDiscordId,
       allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak]
     });
@@ -588,28 +563,12 @@ async function refreshServerStats(guild) {
 
   for (const service of Object.keys(SERVICE_DEFINITIONS)) {
     const definition = SERVICE_DEFINITIONS[service];
-    if (definition.showInStats) continue;
-
-    const serviceNameKeys = serviceStatusNameKeys(definition);
-    const staleChannels = guild.channels.cache.filter((channel) =>
-      [ChannelType.GuildText, ChannelType.GuildVoice].includes(channel.type)
-      && channel.parentId === statsCategory.id
-      && serviceNameKeys.some((serviceNameKey) => channelNameKey(channel.name).includes(serviceNameKey))
-    );
-
-    for (const channel of staleChannels.values()) {
-      await deleteChannel(channel, `Removed hidden WS Store status channel: ${definition.statsLabel}`);
-    }
-  }
-
-  for (const service of Object.keys(SERVICE_DEFINITIONS)) {
-    const definition = SERVICE_DEFINITIONS[service];
     if (!definition.showInStats) continue;
 
     const serviceNameKeys = serviceStatusNameKeys(definition);
     const candidates = [...guild.channels.cache.values()]
       .filter((channel) =>
-        [ChannelType.GuildText, ChannelType.GuildVoice].includes(channel.type)
+        channel.type === ChannelType.GuildVoice
         && channel.parentId === statsCategory.id
         && serviceNameKeys.some((serviceNameKey) => channelNameKey(channel.name).includes(serviceNameKey))
       )
@@ -619,26 +578,15 @@ async function refreshServerStats(guild) {
 
     if (current) {
       if (current.name !== desiredName) await current.setName(desiredName).catch(() => null);
-      if (current.type === ChannelType.GuildVoice) {
-        await current.permissionOverwrites.set(ownerOnlyVoiceOverwrites).catch(() => null);
-      } else {
-        await deleteChannel(current, `Replaced text WS Store status channel with voice channel: ${definition.statsLabel}`);
-        await ensureVoiceChannel(guild, desiredName, statsCategory, ownerOnlyVoiceOverwrites);
-      }
-
-      for (const duplicate of candidates) {
-        if (duplicate.id !== current.id && duplicate.deletable) {
-          await duplicate.delete(`Removed duplicate WS Store status channel: ${definition.statsLabel}`).catch(() => null);
-        }
-      }
+      await current.permissionOverwrites.set(statsVoiceOverwrites).catch(() => null);
     } else {
-      await ensureVoiceChannel(guild, desiredName, statsCategory, ownerOnlyVoiceOverwrites);
+      await ensureVoiceChannel(guild, desiredName, statsCategory, statsVoiceOverwrites);
     }
   }
 }
 
 function storeStatusAnnouncementPayload(guild, storeOpen) {
-  const verifiedRole = guild.roles.cache.find((role) => role.name === ROLE.client);
+  const verifiedRole = findVerifiedRole(guild);
   const mention = verifiedRole ? `<@&${verifiedRole.id}>` : '';
   const title = storeOpen ? '🟢 OPEN ORDER!' : '🔴 CLOSE ORDER!';
   const description = storeOpen
@@ -720,16 +668,14 @@ async function setupServer(interaction) {
   await ensureRole(guild, ROLE.creator, { color: 0x9b59b6 });
   await ensureRole(guild, ROLE.booster, { color: 0xff73fa });
   await ensureRole(guild, ROLE.customer, { color: 0x2ecc71 });
-  await ensureRole(guild, ROLE.client, { color: 0x3498db });
-  await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d });
+  const clientRole = await ensureRole(guild, ROLE.client, { color: 0x3498db, aliases: VERIFIED_ROLE_ALIASES });
+  const unverifiedRole = await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d });
 
   for (const tier of TIER_ROLES) {
     await ensureRole(guild, tier.name, { color: 0x00d2ff, hoist: true, aliases: tier.aliases });
   }
 
   const everyone = guild.roles.everyone;
-  const clientRole = guild.roles.cache.find((role) => role.name === ROLE.client);
-  const unverifiedRole = guild.roles.cache.find((role) => role.name === ROLE.unverified);
 
   const staffAllow = [
     { id: ownerRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
@@ -784,11 +730,6 @@ async function setupServer(interaction) {
     ...staffAllow
   ];
 
-  const legacyGateCategory = guild.channels.cache.find(
-    (channel) => channel.type === ChannelType.GuildCategory && channelMatchesName(channel, '👋 VIBE GATE')
-  );
-  if (legacyGateCategory) await legacyGateCategory.setName(CATEGORY.gate).catch(() => null);
-
   const gateCategory = await ensureCategory(guild, CATEGORY.gate, welcomeReadOnly);
   const infoCategory = await ensureCategory(guild, CATEGORY.info, ownerAdminPublish);
   const marketCategory = await ensureCategory(guild, CATEGORY.market, ownerAdminPublish);
@@ -808,8 +749,6 @@ async function setupServer(interaction) {
 
   await loadServiceStatuses(guild.id);
   await refreshServerStats(guild);
-  await deleteChannelByName(guild, CHANNEL.payment);
-  await deleteChannelByName(guild, '⚙️・setting-room-voice');
 
   await ensureTextChannel(guild, CHANNEL.welcome, gateCategory, welcomeReadOnly);
   const verifyChannel = await ensureTextChannel(guild, CHANNEL.verify, infoCategory, [
@@ -826,7 +765,7 @@ async function setupServer(interaction) {
 
   await ensureTextChannel(guild, '💵・gift-gamepass-all-map', marketCategory, ownerAdminPublish);
   await ensureTextChannel(guild, '🌟・stock-limited-item', marketCategory, ownerAdminPublish);
-  await ensureTextChannel(guild, '➤・item-tumbal-trade', marketCategory, ownerAdminPublish);
+  const itemTumbalChannel = await ensureTextChannel(guild, '➤・item-tumbal-trade', marketCategory, ownerAdminPublish);
   const robuxChannel = await ensureTextChannel(guild, '💎・robux-instant-vilog', marketCategory, ownerAdminPublish);
   const viaUsernameChannel = await ensureTextChannel(guild, CHANNEL.robuxViaUsername, marketCategory, ownerAdminPublish);
   await ensureTextChannel(guild, '🌟・group-payout', marketCategory, ownerAdminPublish);
@@ -843,7 +782,6 @@ async function setupServer(interaction) {
   await ensureTextChannel(guild, '💬・chit-chat', communityCategory, publicChat);
   await ensureTextChannel(guild, '🧾・vouches', communityCategory, publicChat);
   await ensureTextChannel(guild, CHANNEL.giveaways, communityCategory, publicReadOnly);
-  await deleteChannelByName(guild, '🤖・bot-cmd');
   await ensureVoiceChannel(guild, 'Room 1', communityCategory, publicVoice);
 
   await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, transactionReadOnly);
@@ -860,6 +798,7 @@ async function setupServer(interaction) {
   await publishOrEditPanel(ticketSupportChannel, 'ticket_support', ticketPanelPayload('support'));
 
   await publishOrEditPanel(valueUpdateChannel, 'market_value_update', valueUpdatePayload(embedBase));
+  await publishOrEditPanel(itemTumbalChannel, 'market_item_tumbal_trade', itemTumbalTradePayload(embedBase));
   await publishOrEditPanel(robuxChannel, 'price_via_login', viaLoginPricePayload(embedBase));
   await publishOrEditPanel(viaUsernameChannel, 'price_via_username', viaUsernamePricePayload(embedBase));
 
@@ -875,14 +814,27 @@ async function refreshPanels(guild) {
     .select('*')
     .eq('guild_id', guild.id);
 
-  for (const panel of panels || []) {
-    if (!panel.type.startsWith('ticket_')) continue;
+  const panelPayloads = {
+    verify: () => verifyPanelPayload(),
+    ticket_order: () => ticketPanelPayload('order'),
+    ticket_rekber: () => ticketPanelPayload('rekber'),
+    ticket_support: () => ticketPanelPayload('support'),
+    market_value_update: () => valueUpdatePayload(embedBase),
+    market_item_tumbal_trade: () => itemTumbalTradePayload(embedBase),
+    price_via_login: () => viaLoginPricePayload(embedBase),
+    price_via_username: () => viaUsernamePricePayload(embedBase),
+    seed_rules: () => rulesPanelPayload(embedBase),
+    seed_how_to_order: () => howToOrderPanelPayload(embedBase)
+  };
 
-    const type = panel.type.replace('ticket_', '');
+  for (const panel of panels || []) {
+    const payload = panelPayloads[panel.type]?.();
+    if (!payload) continue;
+
     try {
       const channel = await client.channels.fetch(panel.channel_id);
       const message = await channel.messages.fetch(panel.message_id);
-      await message.edit(ticketPanelPayload(type));
+      await message.edit(payload);
     } catch (error) {
       console.warn(`Failed to refresh panel ${panel.type}:`, error.message);
     }
@@ -891,7 +843,7 @@ async function refreshPanels(guild) {
 
 async function handleVerify(interaction) {
   const member = interaction.member;
-  const clientRole = interaction.guild.roles.cache.find((role) => role.name === ROLE.client);
+  const clientRole = findVerifiedRole(interaction.guild);
   const unverifiedRole = interaction.guild.roles.cache.find((role) => role.name === ROLE.unverified);
 
   if (clientRole) await member.roles.add(clientRole).catch(() => null);
@@ -904,6 +856,14 @@ async function handleVerify(interaction) {
 }
 
 async function createTicket(interaction, type) {
+  if (!memberIsStaff(interaction.member) && !memberIsVerified(interaction.member)) {
+    await interaction.reply({
+      content: 'Kamu harus verify terlebih dahulu sebelum membuka ticket.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
   const isAlwaysOpenRekber = type === 'rekber';
 
   if (!isAlwaysOpenRekber && !isStoreOpen()) {
@@ -1404,6 +1364,14 @@ async function closeTicket(interaction) {
 }
 
 async function addManualTransaction(interaction) {
+  if (!memberIsStaff(interaction.member)) {
+    await interaction.reply({
+      content: 'Hanya staff yang bisa menambahkan transaksi manual.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const buyer = interaction.options.getUser('buyer', true);
@@ -1436,6 +1404,15 @@ async function addManualTransaction(interaction) {
 
 async function showCustomer(interaction) {
   const user = interaction.options.getUser('user') || interaction.user;
+
+  if (user.id !== interaction.user.id && !memberIsStaff(interaction.member)) {
+    await interaction.reply({
+      content: 'Hanya staff yang bisa cek profile customer member lain.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
   const { data } = await supabase
     .from('customers')
     .select('*')
@@ -1501,9 +1478,17 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'setup-server') await setupServer(interaction);
       if (interaction.commandName === 'refresh-panels') {
+        if (!memberIsStaff(interaction.member)) {
+          await interaction.reply({
+            content: 'Hanya staff yang bisa refresh panel.',
+            flags: MessageFlags.Ephemeral
+          });
+          return;
+        }
+
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         await refreshPanels(interaction.guild);
-        await interaction.editReply('Panel ticket sudah direfresh.');
+        await interaction.editReply('Semua panel WS Store yang terdaftar sudah direfresh.');
       }
       if (interaction.commandName === 'add-transaction') await addManualTransaction(interaction);
       if (interaction.commandName === 'customer') await showCustomer(interaction);

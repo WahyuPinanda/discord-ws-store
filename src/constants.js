@@ -5,9 +5,11 @@ export const ROLE = {
   creator: '🎬 Content Creator',
   booster: '🚀 Server Booster',
   customer: '🛒 Customer',
-  client: '✅ Client',
+  client: '✅ Verif',
   unverified: '🔒 Unverified'
 };
+
+export const VERIFIED_ROLE_ALIASES = ['✅ Client'];
 
 export const TIER_ROLES = [
   { min: 50_000_000, name: '👑 Royal Customer 50Jt+', aliases: ['💎 Customer 50Jt+'] },

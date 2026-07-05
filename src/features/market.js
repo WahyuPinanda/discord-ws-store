@@ -8,6 +8,28 @@ import { existsSync } from 'node:fs';
 
 const VIA_LOGIN_IMAGE_PATH = 'assets/ws-store-via-login.png';
 const VIA_USERNAME_IMAGE_PATH = 'assets/ws-store-via-username.png';
+const ITEM_TUMBAL_IMAGE_PATH = 'assets/ws-store-item-tumbal-v2.png';
+
+const TUMBAL_TRADE_LINKS = [
+  'https://www.roblox.com/catalog/3798248888/Cake-Topper',
+  'https://www.roblox.com/catalog/152980589/Bellegg',
+  'https://www.roblox.com/catalog/4773591735/Saber-Boss-Egg',
+  'https://www.roblox.com/catalog/4773579034/Brainfreeze-Egg',
+  'https://www.roblox.com/catalog/4771629993/Deteggctive-W-Wolf',
+  'https://www.roblox.com/catalog/108150260/Tiger-Egg',
+  'https://www.roblox.com/catalog/3798251754/Sugar-Shades',
+  'https://www.roblox.com/catalog/1556235379/Teapot-Egg',
+  'https://www.roblox.com/catalog/102611450/Cannonical-Egg',
+  'https://www.roblox.com/catalog/4771632715/Eggmunition',
+  'https://www.roblox.com/catalog/2528066922/Catrin-Dia-de-Muertos-Mask',
+  'https://www.roblox.com/catalog/3016210752/Rocket-Eggscape',
+  'https://www.roblox.com/catalog/4786877411/Tiny-Tank-Egg',
+  'https://www.roblox.com/catalog/3798239844/Frosting-Flyers',
+  'https://www.roblox.com/catalog/3581868178/Goldrow',
+  'https://www.roblox.com/catalog/3016722037/Eggcient-Woolly-Mammoth',
+  'https://www.roblox.com/catalog/3016590511/Tallaheggsee-Zombie-Slayer',
+  'https://www.roblox.com/catalog/110706992/GGE'
+];
 
 function buyRobuxRow() {
   return new ActionRowBuilder().addComponents(
@@ -25,6 +47,10 @@ function attachBanner(payload, imagePath, fileName) {
   payload.embeds[0].setImage(`attachment://${fileName}`);
   payload.files = [new AttachmentBuilder(imagePath, { name: fileName })];
   return payload;
+}
+
+function separatedLinks(links) {
+  return links.flatMap((link, index) => (index === 0 ? [link] : ['', link]));
 }
 
 export function valueUpdatePayload(embedBase) {
@@ -48,6 +74,33 @@ export function valueUpdatePayload(embedBase) {
       )
     ]
   };
+}
+
+export function itemTumbalTradePayload(embedBase) {
+  const payload = {
+    embeds: [
+      embedBase()
+        .setTitle('💎 ITEM TUMBAL TRADE')
+        .setDescription([
+          'BUAT YANG MAU BELI LIMITED ITEM 8BIT ROYAL CROWN, HP BAR, DLL.',
+          'BISA BELI ITEM TUMBAL NYA DULU, KARNA WAJIB MEMPUNYAI MINIMAL 1 ITEM TUMBAL DAN UNTUK ITEM YANG BARU DIBELI, BISA DI TRADE MINIMAL SETELAH 1 MINGGU.',
+          'SILAHKAN DIPILIH SAJA TUMBAL DI BAWAH. CARI YANG MURAH KARNA SEMUANYA BISA DI TRADE.',
+          '',
+          ...separatedLinks(TUMBAL_TRADE_LINKS)
+        ].join('\n'))
+    ],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('ticket:create:order')
+          .setLabel('Beli Item Tumbal')
+          .setEmoji('🎟️')
+          .setStyle(ButtonStyle.Success)
+      )
+    ]
+  };
+
+  return attachBanner(payload, ITEM_TUMBAL_IMAGE_PATH, 'ws-store-item-tumbal-v2.png');
 }
 
 export function viaLoginPricePayload(embedBase) {

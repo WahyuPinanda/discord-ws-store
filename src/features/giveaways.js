@@ -6,7 +6,7 @@ import {
   time,
   TimestampStyles
 } from 'discord.js';
-import { ROLE, TIER_ROLES } from '../constants.js';
+import { ROLE, TIER_ROLES, VERIFIED_ROLE_ALIASES } from '../constants.js';
 
 export const GIVEAWAY_ENTRY_ROLES = [
   { role: TIER_ROLES[0].name, entries: 12 },
@@ -14,7 +14,8 @@ export const GIVEAWAY_ENTRY_ROLES = [
   { role: TIER_ROLES[2].name, entries: 6 },
   { role: TIER_ROLES[3].name, entries: 4 },
   { role: TIER_ROLES[4].name, entries: 2 },
-  { role: ROLE.client, entries: 1 }
+  { role: ROLE.client, entries: 1 },
+  ...VERIFIED_ROLE_ALIASES.map((role) => ({ role, entries: 1 }))
 ];
 
 let giveawaySchemaWarningShown = false;
@@ -299,7 +300,7 @@ export function createGiveawayFeature({
 
     if (!entries) {
       await interaction.reply({
-        content: 'Kamu harus verify terlebih dahulu dan minimal punya role Client untuk ikut giveaway.',
+        content: 'Kamu harus verify terlebih dahulu dan minimal punya role Verif untuk ikut giveaway.',
         flags: MessageFlags.Ephemeral
       });
       return;

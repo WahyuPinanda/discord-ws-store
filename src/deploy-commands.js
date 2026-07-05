@@ -31,7 +31,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('refresh-panels')
-    .setDescription('Refresh tombol ticket sesuai jam operasional.')
+    .setDescription('Refresh semua panel WS Store yang terdaftar.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder()
     .setName('add-transaction')

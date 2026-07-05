@@ -4,7 +4,7 @@ Bot full custom untuk server Discord **WS Store Official**.
 
 Fitur utama:
 
-- Verify member baru: `Unverified` -> `Client`
+- Verify member baru: `Unverified` -> `Verif`
 - Auto role untuk customer dan tier transaksi: `1Jt+`, `5Jt+`, `10Jt+`, `20Jt+`, `50Jt+`
 - Ticket order, rekber, dan support
 - Tombol claim, payment QRIS, complete order, close ticket
@@ -14,6 +14,7 @@ Fitur utama:
 - Supabase database
 - Supabase heartbeat harian agar database tetap aktif selama bot hidup
 - Jam operasional 10.00-22.00 WITA, tombol ticket otomatis disabled di luar jam itu
+- Setup server non-destruktif untuk kategori/channel custom owner
 
 ## 1. Setup Supabase
 
