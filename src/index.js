@@ -197,8 +197,17 @@ async function updateServiceStatus(guild, service, isOpen, updatedBy) {
   if (error) throw error;
 
   serviceStatusCache.set(serviceCacheKey(guild.id, normalized), isOpen);
-  await refreshServerStats(guild);
-  await refreshPanels(guild);
+}
+
+function refreshGuildUiInBackground(guild, reason) {
+  setImmediate(async () => {
+    try {
+      await refreshServerStats(guild);
+      await refreshPanels(guild);
+    } catch (error) {
+      console.warn(`${reason} refresh failed:`, error.message);
+    }
+  });
 }
 
 function ticketTypeLabel(type) {
@@ -1597,8 +1606,8 @@ async function setPanelText(interaction) {
     throw error;
   }
 
-  await refreshPanels(interaction.guild);
-  await interaction.editReply('Teks panel berhasil diupdate dan panel sudah direfresh.');
+  await interaction.editReply('Teks panel berhasil diupdate. Panel sedang direfresh di background.');
+  refreshGuildUiInBackground(interaction.guild, 'Panel text');
 }
 
 async function resetPanelText(interaction) {
@@ -1636,8 +1645,8 @@ async function resetPanelText(interaction) {
     throw error;
   }
 
-  await refreshPanels(interaction.guild);
-  await interaction.editReply('Teks panel sudah dikembalikan ke default dan panel sudah direfresh.');
+  await interaction.editReply('Teks panel sudah dikembalikan ke default. Panel sedang direfresh di background.');
+  refreshGuildUiInBackground(interaction.guild, 'Panel text');
 }
 
 async function handleServiceStatusCommand(interaction, isOpen) {
@@ -1655,6 +1664,7 @@ async function handleServiceStatusCommand(interaction, isOpen) {
   if (service === 'rekber') {
     await updateServiceStatus(interaction.guild, service, true, interaction.user.id);
     await interaction.editReply('Ticket rekber dibuat selalu OPEN. Proses tetap dibantu selagi admin / middleman sedang online.');
+    refreshGuildUiInBackground(interaction.guild, 'Service status');
     return;
   }
 
@@ -1662,7 +1672,8 @@ async function handleServiceStatusCommand(interaction, isOpen) {
 
   const label = SERVICE_DEFINITIONS[service].statsLabel;
   const statusText = isOpen ? 'OPEN 🟢' : 'CLOSED 🔴';
-  await interaction.editReply(`${label} sekarang ${statusText}. Server stats dan tombol ticket sudah diperbarui.`);
+  await interaction.editReply(`${label} sekarang ${statusText}. Server stats dan tombol ticket sedang diperbarui di background.`);
+  refreshGuildUiInBackground(interaction.guild, 'Service status');
 }
 
 client.on('messageCreate', async (message) => {
