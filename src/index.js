@@ -111,6 +111,17 @@ function serviceIsOpen(guildId, service) {
   return cached ?? true;
 }
 
+function serviceStatusIsSet(guildId, service) {
+  const normalized = normalizeServiceName(service);
+  return serviceStatusCache.has(serviceCacheKey(guildId, normalized));
+}
+
+function ticketServiceIsAvailable(guildId, type) {
+  if (type === 'rekber') return true;
+  if (serviceStatusIsSet(guildId, type)) return serviceIsOpen(guildId, type);
+  return isStoreOpen();
+}
+
 async function loadServiceStatuses(guildId) {
   const { data, error } = await supabase
     .from('service_statuses')
@@ -220,7 +231,7 @@ function ticketTypeLabel(type) {
 }
 
 function ticketOpenButton(type) {
-  const available = type === 'rekber' || (isStoreOpen() && serviceIsOpen(config.guildId, type));
+  const available = ticketServiceIsAvailable(config.guildId, type);
   const labels = {
     order: 'Buka Ticket Order',
     rekber: 'Buka Ticket Rekber',
@@ -259,7 +270,9 @@ function ticketPanelPayload(type) {
   };
   const statusText = type === 'rekber'
     ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
-    : operatingStatusText();
+    : serviceStatusIsSet(config.guildId, type)
+      ? `${serviceIsOpen(config.guildId, type) ? 'OPEN' : 'CLOSED'} | Status diatur manual oleh staff. Jam normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
+      : operatingStatusText();
 
   const embed = embedBase()
     .setTitle(`🎟️ ${ticketTypeLabel(type)}`)
@@ -1040,17 +1053,11 @@ async function createTicket(interaction, type) {
 
   const isAlwaysOpenRekber = type === 'rekber';
 
-  if (!isAlwaysOpenRekber && !isStoreOpen()) {
+  if (!isAlwaysOpenRekber && !ticketServiceIsAvailable(interaction.guildId, type)) {
     await interaction.reply({
-      content: `Store sedang closed. ${operatingStatusText()}`,
-      flags: MessageFlags.Ephemeral
-    });
-    return;
-  }
-
-  if (!isAlwaysOpenRekber && !serviceIsOpen(interaction.guildId, type)) {
-    await interaction.reply({
-      content: `${ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`,
+      content: serviceStatusIsSet(interaction.guildId, type)
+        ? `${ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`
+        : `Store sedang closed. ${operatingStatusText()}`,
       flags: MessageFlags.Ephemeral
     });
     return;
