@@ -25,7 +25,7 @@ import { howToOrderPanelPayload, rulesPanelPayload } from './features/info-panel
 import { createInviteTrackerFeature } from './features/invite-tracker.js';
 import { itemTumbalTradePayload, valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './features/market.js';
 import { startHealthServer } from './health.js';
-import { formatRupiah, isStoreOpen, operatingStatusText } from './time.js';
+import { formatRupiah, getStoreDateKey, getStoreHour, isStoreOpen, operatingStatusText } from './time.js';
 
 const serviceStatusCache = new Map();
 const panelTextOverrideCache = new Map();
@@ -108,12 +108,35 @@ function normalizeServiceName(service) {
 function serviceIsOpen(guildId, service) {
   const normalized = normalizeServiceName(service);
   const cached = serviceStatusCache.get(serviceCacheKey(guildId, normalized));
-  return cached ?? true;
+  return cached?.isOpen ?? true;
+}
+
+function serviceManualOverrideIsActive(updatedAt, date = new Date()) {
+  if (!updatedAt) return false;
+
+  const updatedDate = new Date(updatedAt);
+  const updatedDateKey = getStoreDateKey(updatedDate);
+  const currentDateKey = getStoreDateKey(date);
+  const yesterdayDateKey = getStoreDateKey(new Date(date.getTime() - 24 * 60 * 60 * 1000));
+  const updatedHour = getStoreHour(updatedDate);
+  const currentHour = getStoreHour(date);
+
+  if (currentHour >= config.openHour && currentHour < config.closeHour) {
+    return updatedDateKey === currentDateKey && updatedHour >= config.openHour;
+  }
+
+  if (currentHour >= config.closeHour) {
+    return updatedDateKey === currentDateKey && updatedHour >= config.closeHour;
+  }
+
+  return (updatedDateKey === yesterdayDateKey && updatedHour >= config.closeHour)
+    || (updatedDateKey === currentDateKey && updatedHour < config.openHour);
 }
 
 function serviceStatusIsSet(guildId, service) {
   const normalized = normalizeServiceName(service);
-  return serviceStatusCache.has(serviceCacheKey(guildId, normalized));
+  const cached = serviceStatusCache.get(serviceCacheKey(guildId, normalized));
+  return serviceManualOverrideIsActive(cached?.updatedAt);
 }
 
 function ticketServiceIsAvailable(guildId, type) {
@@ -125,7 +148,7 @@ function ticketServiceIsAvailable(guildId, type) {
 async function loadServiceStatuses(guildId) {
   const { data, error } = await supabase
     .from('service_statuses')
-    .select('service,is_open')
+    .select('service,is_open,updated_at')
     .eq('guild_id', guildId);
 
   if (error) {
@@ -133,13 +156,16 @@ async function loadServiceStatuses(guildId) {
     return;
   }
 
-  for (const [service] of Object.entries(SERVICE_DEFINITIONS)) {
-    serviceStatusCache.set(serviceCacheKey(guildId, service), true);
+  for (const key of serviceStatusCache.keys()) {
+    if (key.startsWith(`${guildId}:`)) serviceStatusCache.delete(key);
   }
 
   for (const row of data || []) {
     const service = normalizeServiceName(row.service);
-    serviceStatusCache.set(serviceCacheKey(guildId, service), Boolean(row.is_open));
+    serviceStatusCache.set(serviceCacheKey(guildId, service), {
+      isOpen: Boolean(row.is_open),
+      updatedAt: row.updated_at
+    });
   }
 }
 
@@ -207,7 +233,10 @@ async function updateServiceStatus(guild, service, isOpen, updatedBy) {
 
   if (error) throw error;
 
-  serviceStatusCache.set(serviceCacheKey(guild.id, normalized), isOpen);
+  serviceStatusCache.set(serviceCacheKey(guild.id, normalized), {
+    isOpen,
+    updatedAt: new Date().toISOString()
+  });
 }
 
 function refreshGuildUiInBackground(guild, reason) {

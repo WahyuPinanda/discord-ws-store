@@ -11,6 +11,20 @@ export function getStoreHour(date = new Date()) {
   return Number(rawHour) % 24;
 }
 
+export function getStoreDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: config.timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value || '0000';
+  const month = parts.find((part) => part.type === 'month')?.value || '00';
+  const day = parts.find((part) => part.type === 'day')?.value || '00';
+  return `${year}-${month}-${day}`;
+}
+
 export function isStoreOpen(date = new Date()) {
   const hour = getStoreHour(date);
   return hour >= config.openHour && hour < config.closeHour;
