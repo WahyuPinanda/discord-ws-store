@@ -250,6 +250,16 @@ function refreshGuildUiInBackground(guild, reason) {
   });
 }
 
+function refreshPanelsInBackground(guild, reason) {
+  setImmediate(async () => {
+    try {
+      await refreshPanels(guild);
+    } catch (error) {
+      console.warn(`${reason} refresh failed:`, error.message);
+    }
+  });
+}
+
 function ticketTypeLabel(type) {
   const labels = {
     order: 'Order Ticket',
@@ -1740,9 +1750,11 @@ client.on('interactionCreate', async (interaction) => {
           return;
         }
 
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        await refreshPanels(interaction.guild);
-        await interaction.editReply('Semua panel WS Store yang terdaftar sudah direfresh.');
+        await interaction.reply({
+          content: 'Refresh panel dimulai di background. Cek panel lagi beberapa detik lagi.',
+          flags: MessageFlags.Ephemeral
+        });
+        refreshPanelsInBackground(interaction.guild, 'Manual panel');
       }
       if (interaction.commandName === 'add-transaction') await addManualTransaction(interaction);
       if (interaction.commandName === 'customer') await showCustomer(interaction);
