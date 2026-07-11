@@ -6,6 +6,7 @@ import {
   ChannelType,
   Client,
   EmbedBuilder,
+  Events,
   GatewayIntentBits,
   MessageFlags,
   ModalBuilder,
@@ -150,7 +151,7 @@ function ticketServiceIsAvailable(guildId, type) {
 
 function orderTicketServiceIsAvailable(guildId, service) {
   return ticketServiceIsAvailable(guildId, 'order')
-    && ticketServiceIsAvailable(guildId, service);
+    && serviceIsOpen(guildId, service);
 }
 
 function guildUiSnapshot(guildId) {
@@ -315,13 +316,9 @@ function orderTicketService(service) {
 }
 
 function serviceStatusText(service) {
-  if (serviceStatusIsSet(config.guildId, service)) {
-    return serviceIsOpen(config.guildId, service)
-      ? 'OPEN | Status diatur manual oleh staff.'
-      : 'CLOSED | Status diatur manual oleh staff.';
-  }
-
-  return operatingStatusText();
+  return serviceIsOpen(config.guildId, service)
+    ? 'OPEN | Mengikuti server stats.'
+    : 'CLOSED | Mengikuti server stats.';
 }
 
 function orderTicketRows() {
@@ -1208,10 +1205,15 @@ async function createTicket(interaction, type, service = null) {
     : availabilityKey;
 
   if (!isAlwaysOpenRekber && !isAvailable) {
+    const selectedService = type === 'order' && service ? orderTicketService(service) : null;
     await interaction.reply({
-      content: serviceStatusIsSet(interaction.guildId, statusKey)
-        ? `${statusKey === 'order' ? 'Ticket Order' : ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`
-        : `Store sedang closed. ${operatingStatusText()}`,
+      content: statusKey === 'order'
+        ? 'Ticket Order sedang closed. Silakan tunggu admin membuka kembali.'
+        : selectedService
+          ? `${selectedService.label} sedang closed sesuai server stats. Silakan pilih layanan yang hijau atau tunggu admin membuka kembali.`
+          : serviceStatusIsSet(interaction.guildId, statusKey)
+            ? `${ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`
+            : `Store sedang closed. ${operatingStatusText()}`,
       flags: MessageFlags.Ephemeral
     });
     return;
@@ -1932,7 +1934,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.once('ready', async () => {
+client.once(Events.ClientReady, async () => {
   console.log(`${client.user.tag} online for ${config.storeName}.`);
   await keepSupabaseAwake().catch((error) => console.warn('Supabase heartbeat failed:', error.message));
 
