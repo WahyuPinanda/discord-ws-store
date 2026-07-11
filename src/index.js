@@ -1784,6 +1784,18 @@ async function handleServiceStatusCommand(interaction, isOpen) {
   const service = interaction.options.getSubcommand();
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+  if (service === 'order') {
+    const orderServices = ['order', ...ORDER_TICKET_SERVICES.map((item) => item.service)];
+    await Promise.all(
+      orderServices.map((item) => updateServiceStatus(interaction.guild, item, isOpen, interaction.user.id))
+    );
+
+    const statusText = isOpen ? 'OPEN 🟢' : 'CLOSED 🔴';
+    await interaction.editReply(`Semua tombol Ticket Order sekarang ${statusText}. Server stats dan tombol ticket sedang diperbarui di background.`);
+    refreshGuildUiInBackground(interaction.guild, 'Service status');
+    return;
+  }
+
   if (service === 'rekber') {
     await updateServiceStatus(interaction.guild, service, true, interaction.user.id);
     await interaction.editReply('Ticket rekber dibuat selalu OPEN. Proses tetap dibantu selagi admin / middleman sedang online.');
