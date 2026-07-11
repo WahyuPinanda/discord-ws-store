@@ -24,7 +24,12 @@ git pull --ff-only origin main
 echo "Current commit:"
 git log -1 --oneline
 
-echo "Checking that new features exist in local source..."
+echo "Installing locked dependencies and running preflight checks..."
+npm ci
+npm test
+find src test -type f -name '*.js' -exec node --check {} \;
+
+echo "Checking that required production features exist..."
 grep -q "QRIS button, voice Room 1, server stats" src/index.js
 grep -q "setName('open')" src/deploy-commands.js
 grep -q "service_statuses" supabase/schema.sql
@@ -55,10 +60,9 @@ SUPABASE_SECRET_KEY="$(gcloud secrets versions access latest --secret=supabase-s
 export DISCORD_CLIENT_ID
 export DISCORD_GUILD_ID
 export SUPABASE_URL
-npm ci
 npm run deploy:commands
 
 echo "Recent logs:"
 gcloud run services logs read "${SERVICE_NAME}" --region "${REGION}" --limit 20
 
-echo "Done. Run /setup-server again in Discord after refreshing Discord."
+echo "Done. Existing Discord channels, messages, tickets, and transactions were not reset."

@@ -13,7 +13,8 @@ Fitur utama:
 - Transcript ticket HTML otomatis
 - Supabase database
 - Supabase heartbeat harian agar database tetap aktif selama bot hidup
-- Jam operasional 10.00-22.00 WITA, tombol ticket otomatis disabled di luar jam itu
+- Jam operasional 10.00-22.00 WIB dengan override manual sampai batas jadwal berikutnya
+- Tombol layanan order mengikuti indikator masing-masing di SERVER STATS
 - Setup server non-destruktif untuk kategori/channel custom owner
 
 ## 1. Setup Supabase
@@ -96,7 +97,7 @@ Command itu akan membuat role, kategori, channel, panel verify, panel ticket, da
 
 ## 5. Alur Order
 
-1. Buyer klik ticket order saat jam operasional.
+1. Buyer memilih layanan order yang berstatus hijau saat gerbang Ticket Order terbuka.
 2. Bot membuat channel `ticket-xxx`.
 3. Admin klik `Claim Ticket`.
 4. Buyer klik `Payment QRIS` atau lihat channel payment.
@@ -126,11 +127,19 @@ Default:
 
 Di luar jam ini:
 
-- tombol ticket order dan support otomatis disabled
+- gerbang ticket order dan support otomatis closed
+- `/open order` dapat membuka gerbang order sementara sampai batas jadwal berikutnya
+- tombol Gamepass & GIG, Payout Instant, VILOG, Via Username, dan Limited Item tetap mengikuti SERVER STATS masing-masing
 - kalau ada tombol lama yang masih bisa diklik, bot tetap menolak pembuatan ticket
 - ticket rekber tetap bisa dibuka, tetapi proses dibantu selagi admin / middleman sedang online
 
-Panel ticket direfresh setiap 1 menit.
+Panel ticket diperiksa otomatis setiap 1 menit dan hanya diedit ketika status berubah. Tidak perlu menjalankan `/refresh-panels` saat jadwal berganti.
+
+Contoh perilaku override:
+
+- `/open order` pukul 23.00 membuka order sampai pukul 10.00, lalu jadwal normal mengambil alih
+- `/close order` pukul 01.00 menutup order sampai pukul 10.00, lalu order terbuka otomatis
+- pada pukul 22.00 gerbang order kembali closed otomatis
 
 ## 7. Supabase Free Keep Alive
 
@@ -153,6 +162,8 @@ Penting: heartbeat hanya berjalan kalau bot hidup. Kalau bot dimatikan, VPS mati
 `/add-transaction` berguna untuk transaksi manual di luar ticket.
 `/open-ticket` berguna untuk staff membuka ticket member tertentu, termasuk di luar jam operasional.
 `/set-panel-text` menyimpan teks panel market/pricelist ke Supabase, jadi perubahan harga tidak perlu edit kode.
+
+`/refresh-panels` hanya mengedit pesan panel bot yang sudah tercatat. Command ini tidak menghapus kategori, channel, chat, ticket aktif, atau transaksi.
 
 Untuk value update Rolimons, invite bot Rolimons official secara terpisah lalu beri role `🤖 Rolimons Bot`. Setup WS Store sudah menyiapkan permission role itu agar bisa mengirim embed di channel `value-update-realtime`.
 
@@ -184,6 +195,20 @@ Cloud Run perlu diset dengan:
 - memory minimal `512Mi`
 
 Ini penting karena bot Discord harus menjaga koneksi WebSocket tetap hidup.
+
+Script `scripts/deploy-cloudrun.sh` menjalankan `npm ci`, unit test, dan pemeriksaan syntax sebelum build. Deployment dihentikan otomatis jika salah satu pemeriksaan gagal.
+
+## Struktur Kode
+
+- `src/index.js`: wiring bot, setup server, event routing, dan orkestrasi fitur
+- `src/features/service-status.js`: cache status, manual override, dan aturan jam operasional
+- `src/features/ticket-panels.js`: embed serta tombol panel ticket
+- `src/features/ticket-creation.js`: pembuatan channel ticket, lock klik ganda, dan rollback kegagalan
+- `src/features/giveaways.js`: giveaway
+- `src/features/invite-tracker.js`: welcome dan invite tracker
+- `src/features/anti-spam.js`: moderasi spam
+- `src/features/market.js`: panel market dan pricelist
+- `test/`: unit test aturan waktu, panel, dan concurrency ticket
 
 ### 10.1 Buat GitHub repo
 

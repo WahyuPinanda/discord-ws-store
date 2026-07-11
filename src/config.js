@@ -19,6 +19,29 @@ if (!supabaseSecretKey) {
   throw new Error('Missing required env: SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY');
 }
 
+function parseHour(name, fallback, { allow24 = false } = {}) {
+  const value = Number(process.env[name] ?? fallback);
+  const maximum = allow24 ? 24 : 23;
+  if (!Number.isInteger(value) || value < 0 || value > maximum) {
+    throw new Error(`${name} must be an integer between 0 and ${maximum}`);
+  }
+  return value;
+}
+
+const timezone = process.env.STORE_TIMEZONE || 'Asia/Jakarta';
+const openHour = parseHour('STORE_OPEN_HOUR', 10);
+const closeHour = parseHour('STORE_CLOSE_HOUR', 22, { allow24: true });
+
+if (openHour >= closeHour) {
+  throw new Error('STORE_OPEN_HOUR must be earlier than STORE_CLOSE_HOUR');
+}
+
+try {
+  new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format();
+} catch {
+  throw new Error(`STORE_TIMEZONE is invalid: ${timezone}`);
+}
+
 export const config = {
   discordToken: process.env.DISCORD_TOKEN,
   clientId: process.env.DISCORD_CLIENT_ID,
@@ -27,9 +50,9 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseServiceRoleKey: supabaseSecretKey,
   storeName: process.env.STORE_NAME || 'WS Store Official',
-  timezone: process.env.STORE_TIMEZONE || 'Asia/Jakarta',
+  timezone,
   timezoneLabel: process.env.STORE_TIMEZONE_LABEL || 'WIB',
-  openHour: Number(process.env.STORE_OPEN_HOUR || 10),
-  closeHour: Number(process.env.STORE_CLOSE_HOUR || 22),
+  openHour,
+  closeHour,
   qrisImagePath: process.env.QRIS_IMAGE_PATH || 'assets/qris-ws-store.png'
 };

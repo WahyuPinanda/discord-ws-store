@@ -25,16 +25,19 @@ import { createGiveawayFeature } from './features/giveaways.js';
 import { howToOrderPanelPayload, rulesPanelPayload } from './features/info-panels.js';
 import { createInviteTrackerFeature } from './features/invite-tracker.js';
 import { itemTumbalTradePayload, valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './features/market.js';
+import { createServiceStatusFeature } from './features/service-status.js';
+import { createTicketCreationFeature } from './features/ticket-creation.js';
+import { createTicketPanelFeature } from './features/ticket-panels.js';
 import { startHealthServer } from './health.js';
 import { formatRupiah, getStoreDateKey, getStoreHour, isStoreOpen, operatingStatusText } from './time.js';
 
-const serviceStatusCache = new Map();
 const panelTextOverrideCache = new Map();
 let lastStoreOpenState = null;
 let lastPeriodicUiSnapshot = null;
 let periodicUiRefreshRunning = false;
 let giveawayAutoEndRunning = false;
 let panelTextOverrideSchemaWarningShown = false;
+const ticketCompletionLocks = new Set();
 
 const client = new Client({
   intents: [
@@ -49,6 +52,40 @@ const client = new Client({
 });
 
 const healthServer = startHealthServer(client);
+
+const {
+  guildUiSnapshot,
+  loadServiceStatuses,
+  orderTicketServiceIsAvailable,
+  serviceIsOpen,
+  serviceStatusIsSet,
+  ticketServiceIsAvailable,
+  updateServiceStatus
+} = createServiceStatusFeature({
+  supabase,
+  definitions: SERVICE_DEFINITIONS,
+  openHour: config.openHour,
+  closeHour: config.closeHour,
+  getDateKey: getStoreDateKey,
+  getHour: getStoreHour,
+  isStoreOpen
+});
+
+const {
+  orderTicketService,
+  ticketPanelPayload,
+  ticketTypeLabel
+} = createTicketPanelFeature({
+  config,
+  embedBase,
+  operatingStatusText,
+  orderTicketServices: ORDER_TICKET_SERVICES,
+  rekberImagePath: REKBER_IMAGE_PATH,
+  orderTicketServiceIsAvailable,
+  serviceIsOpen,
+  serviceStatusIsSet,
+  ticketServiceIsAvailable
+});
 
 function embedBase() {
   return new EmbedBuilder()
@@ -82,10 +119,6 @@ function memberIsOwner(member, userId) {
     || member.roles.cache.some((role) => role.name === ROLE.owner);
 }
 
-function serviceCacheKey(guildId, service) {
-  return `${guildId}:${service}`;
-}
-
 function panelTextOverrideKey(guildId, type) {
   return `${guildId}:${type}`;
 }
@@ -101,78 +134,6 @@ function isPanelTextOverrideSchemaMissing(error) {
     || message.includes('schema cache');
 }
 
-function normalizeServiceName(service) {
-  return service === 'via_login' ? 'via-login'
-    : service === 'via_username' ? 'via-username'
-    : service === 'group_payout' ? 'group-payout'
-      : service === 'gift_gamepass' ? 'gift-gamepass'
-        : service;
-}
-
-function serviceIsOpen(guildId, service) {
-  const normalized = normalizeServiceName(service);
-  const cached = serviceStatusCache.get(serviceCacheKey(guildId, normalized));
-  return cached?.isOpen ?? true;
-}
-
-function serviceManualOverrideIsActive(updatedAt, date = new Date()) {
-  if (!updatedAt) return false;
-
-  const updatedDate = new Date(updatedAt);
-  const updatedDateKey = getStoreDateKey(updatedDate);
-  const currentDateKey = getStoreDateKey(date);
-  const yesterdayDateKey = getStoreDateKey(new Date(date.getTime() - 24 * 60 * 60 * 1000));
-  const updatedHour = getStoreHour(updatedDate);
-  const currentHour = getStoreHour(date);
-
-  if (currentHour >= config.openHour && currentHour < config.closeHour) {
-    return updatedDateKey === currentDateKey && updatedHour >= config.openHour;
-  }
-
-  if (currentHour >= config.closeHour) {
-    return updatedDateKey === currentDateKey && updatedHour >= config.closeHour;
-  }
-
-  return (updatedDateKey === yesterdayDateKey && updatedHour >= config.closeHour)
-    || (updatedDateKey === currentDateKey && updatedHour < config.openHour);
-}
-
-function serviceStatusIsSet(guildId, service) {
-  const normalized = normalizeServiceName(service);
-  const cached = serviceStatusCache.get(serviceCacheKey(guildId, normalized));
-  return serviceManualOverrideIsActive(cached?.updatedAt);
-}
-
-function ticketServiceIsAvailable(guildId, type) {
-  if (type === 'rekber') return true;
-  if (serviceStatusIsSet(guildId, type)) return serviceIsOpen(guildId, type);
-  return isStoreOpen();
-}
-
-function orderTicketServiceIsAvailable(guildId, service) {
-  return ticketServiceIsAvailable(guildId, 'order')
-    && serviceIsOpen(guildId, service);
-}
-
-function guildUiSnapshot(guildId) {
-  const serviceStates = Object.keys(SERVICE_DEFINITIONS)
-    .sort()
-    .map((service) => {
-      const cached = serviceStatusCache.get(serviceCacheKey(guildId, service));
-      return [
-        service,
-        serviceStatusIsSet(guildId, service),
-        serviceIsOpen(guildId, service),
-        cached?.updatedAt || ''
-      ].join(':');
-    });
-
-  return JSON.stringify({
-    storeOpen: isStoreOpen(),
-    serviceStates
-  });
-}
-
 async function refreshGuildUiIfChanged(guild) {
   await loadServiceStatuses(guild.id);
   const snapshot = guildUiSnapshot(guild.id);
@@ -183,30 +144,6 @@ async function refreshGuildUiIfChanged(guild) {
   await refreshServerStats(guild);
   await refreshPanels(guild, { reloadServiceStatuses: false });
   return true;
-}
-
-async function loadServiceStatuses(guildId) {
-  const { data, error } = await supabase
-    .from('service_statuses')
-    .select('service,is_open,updated_at')
-    .eq('guild_id', guildId);
-
-  if (error) {
-    console.warn('Failed to load service statuses:', error.message);
-    return;
-  }
-
-  for (const key of serviceStatusCache.keys()) {
-    if (key.startsWith(`${guildId}:`)) serviceStatusCache.delete(key);
-  }
-
-  for (const row of data || []) {
-    const service = normalizeServiceName(row.service);
-    serviceStatusCache.set(serviceCacheKey(guildId, service), {
-      isOpen: Boolean(row.is_open),
-      updatedAt: row.updated_at
-    });
-  }
 }
 
 async function loadPanelTextOverrides(guildId) {
@@ -255,30 +192,6 @@ function serviceStatusNameKeys(definition) {
   ].filter(Boolean).map((item) => channelNameKey(item)))];
 }
 
-async function updateServiceStatus(guild, service, isOpen, updatedBy) {
-  const normalized = normalizeServiceName(service);
-
-  if (!SERVICE_DEFINITIONS[normalized]) {
-    throw new Error(`Unknown service: ${service}`);
-  }
-
-  const { error } = await supabase
-    .from('service_statuses')
-    .upsert({
-      guild_id: guild.id,
-      service: normalized,
-      is_open: isOpen,
-      updated_by: updatedBy
-    }, { onConflict: 'guild_id,service' });
-
-  if (error) throw error;
-
-  serviceStatusCache.set(serviceCacheKey(guild.id, normalized), {
-    isOpen,
-    updatedAt: new Date().toISOString()
-  });
-}
-
 function refreshGuildUiInBackground(guild, reason) {
   setImmediate(async () => {
     try {
@@ -300,118 +213,6 @@ function refreshPanelsInBackground(guild, reason) {
       console.warn(`${reason} refresh failed:`, error.message);
     }
   });
-}
-
-function ticketTypeLabel(type) {
-  const labels = {
-    order: 'Order Ticket',
-    rekber: 'Rekber / Middleman Ticket',
-    support: 'Support Ticket'
-  };
-  return labels[type] || 'Ticket';
-}
-
-function orderTicketService(service) {
-  return ORDER_TICKET_SERVICES.find((item) => item.service === service) || null;
-}
-
-function serviceStatusText(service) {
-  return serviceIsOpen(config.guildId, service)
-    ? 'OPEN | Mengikuti server stats.'
-    : 'CLOSED | Mengikuti server stats.';
-}
-
-function orderTicketRows() {
-  const buttons = ORDER_TICKET_SERVICES.map((item) =>
-    new ButtonBuilder()
-      .setCustomId(`ticket:create:order:${item.service}`)
-      .setLabel(item.label)
-      .setEmoji(item.emoji)
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(!orderTicketServiceIsAvailable(config.guildId, item.service))
-  );
-
-  return [
-    new ActionRowBuilder().addComponents(buttons.slice(0, 2)),
-    new ActionRowBuilder().addComponents(buttons.slice(2, 4)),
-    new ActionRowBuilder().addComponents(buttons.slice(4))
-  ];
-}
-
-function ticketOpenButton(type) {
-  const available = ticketServiceIsAvailable(config.guildId, type);
-  const labels = {
-    order: 'Buka Ticket Order',
-    rekber: 'Buka Ticket Rekber',
-    support: 'Buka Ticket Support'
-  };
-
-  return new ButtonBuilder()
-    .setCustomId(`ticket:create:${type}`)
-    .setLabel(labels[type])
-    .setEmoji(type === 'rekber' ? '🤝' : type === 'support' ? '🛠️' : '🎟️')
-    .setStyle(ButtonStyle.Success)
-    .setDisabled(!available);
-}
-
-function ticketPanelPayload(type) {
-  const description = {
-    order: [
-      '**Pilih layanan yang ingin kamu order lewat tombol di bawah.**',
-      '',
-      ...ORDER_TICKET_SERVICES.flatMap((item) => [
-        `${item.emoji} **${item.label}**`,
-        `${item.description}`,
-        `Status: ${serviceStatusText(item.service)}`,
-        ''
-      ]),
-      `Jam operasional normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}.`
-    ].join('\n').trim(),
-    rekber: [
-      '**WS Store Middleman Service**',
-      'Buka ticket ini jika kamu butuh penengah transaksi agar proses jual-beli lebih tertata, aman, dan tercatat.',
-      '',
-      '**Fee Rekber:**',
-      '• Rp1.000 - Rp500.000 → Rp4.000',
-      '• Rp500.000 - Rp10.000.000 → Rp10.000',
-      '• Rp10.000.000 - Rp20.000.000 → Rp15.000',
-      '• Rp20.000.000 - Rp50.000.000 → Rp20.000',
-      '',
-      '**Ketentuan singkat:**',
-      '• Buyer dan seller wajib berada di ticket.',
-      '• Bukti deal, nominal, dan detail item harus jelas.',
-      '• Jangan lanjut transaksi di luar arahan middleman WS Store.',
-      '',
-      '**Catatan:** Ticket rekber selalu bisa dibuka, tetapi proses akan dibantu selagi admin / middleman sedang online.'
-    ].join('\n'),
-    support: 'Gunakan ticket ini untuk pertanyaan, kendala order, atau bantuan umum.'
-  };
-  const statusText = type === 'order'
-    ? `${serviceStatusText('order')}\nStatus tombol layanan mengikuti server stats masing-masing.`
-    : type === 'rekber'
-      ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
-      : serviceStatusIsSet(config.guildId, type)
-        ? `${serviceIsOpen(config.guildId, type) ? 'OPEN' : 'CLOSED'} | Status diatur manual oleh staff. Jam normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
-        : operatingStatusText();
-
-  const embed = embedBase()
-    .setTitle(`🎟️ ${ticketTypeLabel(type)}`)
-    .setDescription(`${description[type]}\n\n${statusText}`);
-  const payload = {
-    embeds: [
-      embed
-    ],
-    components: type === 'order'
-      ? orderTicketRows()
-      : [new ActionRowBuilder().addComponents(ticketOpenButton(type))]
-  };
-
-  if (type === 'rekber' && existsSync(REKBER_IMAGE_PATH)) {
-    embed.setImage('attachment://ws-store-rekber.png');
-    payload.files = [new AttachmentBuilder(REKBER_IMAGE_PATH, { name: 'ws-store-rekber.png' })];
-  }
-
-  return payload;
 }
 
 function verifyPanelPayload() {
@@ -493,6 +294,16 @@ function ticketControlRows(type) {
 
   return [firstRow, secondRow];
 }
+
+const { createTicketForMember } = createTicketCreationFeature({
+  supabase,
+  activeTicketCategoryName: CATEGORY.activeTicket,
+  staffRoleNames,
+  orderTicketService,
+  ticketTypeLabel,
+  ticketControlRows,
+  embedBase
+});
 
 function qrisReplyPayload({ ephemeral = false } = {}) {
   const file = new AttachmentBuilder(config.qrisImagePath, { name: 'qris-ws-store.png' });
@@ -1081,103 +892,6 @@ async function handleVerify(interaction) {
   });
 }
 
-async function createTicketForMember(interaction, type, openerMember, options = {}) {
-  const { bypassStoreHours = false, openedByStaff = false, service = null } = options;
-  const openerUser = openerMember.user;
-  const selectedService = type === 'order' ? orderTicketService(service) : null;
-
-  const { data: existing } = await supabase
-    .from('tickets')
-    .select('*')
-    .eq('guild_id', interaction.guildId)
-    .eq('opener_id', openerUser.id)
-    .eq('type', type)
-    .in('status', ['open', 'claimed'])
-    .maybeSingle();
-
-  if (existing?.channel_id) {
-    return { existingChannelId: existing.channel_id };
-  }
-
-  const { data: ticket, error } = await supabase
-    .from('tickets')
-    .insert({
-      type,
-      guild_id: interaction.guildId,
-      opener_id: openerUser.id,
-      opener_tag: openerUser.tag
-    })
-    .select('*')
-    .single();
-
-  if (error) throw error;
-
-  const activeCategory = interaction.guild.channels.cache.find(
-    (channel) => channel.type === ChannelType.GuildCategory && channel.name === CATEGORY.activeTicket
-  );
-  const overwrites = [
-    { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    { id: openerMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles] }
-  ];
-
-  for (const roleName of staffRoleNames()) {
-    const role = interaction.guild.roles.cache.find((item) => item.name === roleName);
-    if (role) {
-      overwrites.push({
-        id: role.id,
-        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
-      });
-    }
-  }
-
-  const channel = await interaction.guild.channels.create({
-    name: `ticket-${ticket.id}`,
-    type: ChannelType.GuildText,
-    parent: activeCategory,
-    topic: `${ticketTypeLabel(type)}${selectedService ? ` | service:${selectedService.label}` : ''} | opener:${openerUser.id} | ticket:${ticket.id}`,
-    permissionOverwrites: overwrites
-  });
-
-  await supabase
-    .from('tickets')
-    .update({ channel_id: channel.id })
-    .eq('id', ticket.id);
-
-  await channel.send({
-    content: `<@${openerUser.id}>`,
-    embeds: [
-      embedBase()
-        .setTitle('🎟️ Ticket Created')
-        .setDescription([
-          `Hello <@${openerUser.id}>! Terima kasih telah membuka ticket.`,
-          openedByStaff ? `Ticket ini dibukakan oleh staff <@${interaction.user.id}>.` : null,
-          bypassStoreHours ? 'Catatan: ticket ini dibuka oleh staff di luar jam operasional.' : null,
-          selectedService ? `Layanan dipilih: **${selectedService.emoji} ${selectedService.label}**` : null,
-          '',
-          type === 'order'
-            ? [
-              '**Form order:**',
-              `Layanan: ${selectedService ? `${selectedService.emoji} ${selectedService.label}` : '-'}`,
-              'Produk:',
-              'Jumlah:',
-              'Username Roblox:',
-              selectedService?.service === 'via-login' ? 'USN + Password:' : null,
-              'Metode pembayaran:',
-              'Catatan:'
-            ].filter(Boolean).join('\n')
-            : type === 'rekber'
-              ? '**Form rekber:**\nBuyer/Seller:\nBarang transaksi:\nNominal:\nPihak lawan:\nBukti kesepakatan:'
-              : '**Form support:**\nMasalah:\nOrder ID jika ada:\nBukti screenshot:\nPenjelasan:',
-          '',
-          'Silakan isi form di atas dan tunggu admin menerima ticket.'
-        ].filter(Boolean).join('\n'))
-    ],
-    components: ticketControlRows(type)
-  });
-
-  return { channelId: channel.id };
-}
-
 async function createTicket(interaction, type, service = null) {
   if (type === 'order' && service && !orderTicketService(service)) {
     await interaction.reply({
@@ -1572,8 +1286,7 @@ async function closeTicketChannel(channel, ticket, closedBy, options = {}) {
   return transcript;
 }
 
-async function completeTicket(interaction) {
-  const ticketId = interaction.customId.split(':').at(-1);
+async function completeTicketUnlocked(interaction, ticketId) {
   const product = interaction.fields.getTextInputValue('product');
   const amountRaw = interaction.fields.getTextInputValue('amount');
   const paymentMethod = interaction.fields.getTextInputValue('payment');
@@ -1595,6 +1308,11 @@ async function completeTicket(interaction) {
 
   if (!ticket) {
     await interaction.editReply('Ticket tidak ditemukan.');
+    return;
+  }
+
+  if (ticket.status === 'completed' || ticket.status === 'closed') {
+    await interaction.editReply('Ticket ini sudah selesai atau sudah ditutup. Transaksi tidak dicatat ulang.');
     return;
   }
 
@@ -1645,6 +1363,24 @@ async function completeTicket(interaction) {
   await interaction.editReply('Order selesai, invoice DM terkirim jika DM pembeli terbuka, dan ticket akan ditutup.');
   await interaction.channel.send('Ticket akan ditutup dalam 8 detik.');
   setTimeout(() => interaction.channel.delete('Order completed by WS Store bot').catch(() => null), 8000);
+}
+
+async function completeTicket(interaction) {
+  const ticketId = interaction.customId.split(':').at(-1);
+  if (ticketCompletionLocks.has(ticketId)) {
+    await interaction.reply({
+      content: 'Penyelesaian ticket ini sedang diproses. Mohon tunggu.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  ticketCompletionLocks.add(ticketId);
+  try {
+    await completeTicketUnlocked(interaction, ticketId);
+  } finally {
+    ticketCompletionLocks.delete(ticketId);
+  }
 }
 
 async function closeTicket(interaction) {
