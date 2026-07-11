@@ -145,6 +145,11 @@ function ticketServiceIsAvailable(guildId, type) {
   return isStoreOpen();
 }
 
+function orderTicketServiceIsAvailable(guildId, service) {
+  return ticketServiceIsAvailable(guildId, 'order')
+    && ticketServiceIsAvailable(guildId, service);
+}
+
 async function loadServiceStatuses(guildId) {
   const { data, error } = await supabase
     .from('service_statuses')
@@ -290,7 +295,7 @@ function orderTicketRows() {
       .setLabel(item.label)
       .setEmoji(item.emoji)
       .setStyle(ButtonStyle.Success)
-      .setDisabled(!ticketServiceIsAvailable(config.guildId, item.service))
+      .setDisabled(!orderTicketServiceIsAvailable(config.guildId, item.service))
   );
 
   return [
@@ -349,7 +354,7 @@ function ticketPanelPayload(type) {
     support: 'Gunakan ticket ini untuk pertanyaan, kendala order, atau bantuan umum.'
   };
   const statusText = type === 'order'
-    ? 'Status tombol mengikuti server stats masing-masing layanan.'
+    ? `${serviceStatusText('order')}\nStatus tombol layanan mengikuti server stats masing-masing.`
     : type === 'rekber'
       ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
       : serviceStatusIsSet(config.guildId, type)
@@ -1156,11 +1161,17 @@ async function createTicket(interaction, type, service = null) {
 
   const isAlwaysOpenRekber = type === 'rekber';
   const availabilityKey = type === 'order' && service ? service : type;
+  const isAvailable = type === 'order' && service
+    ? orderTicketServiceIsAvailable(interaction.guildId, service)
+    : ticketServiceIsAvailable(interaction.guildId, availabilityKey);
+  const statusKey = type === 'order' && service && !ticketServiceIsAvailable(interaction.guildId, 'order')
+    ? 'order'
+    : availabilityKey;
 
-  if (!isAlwaysOpenRekber && !ticketServiceIsAvailable(interaction.guildId, availabilityKey)) {
+  if (!isAlwaysOpenRekber && !isAvailable) {
     await interaction.reply({
-      content: serviceStatusIsSet(interaction.guildId, availabilityKey)
-        ? `${ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`
+      content: serviceStatusIsSet(interaction.guildId, statusKey)
+        ? `${statusKey === 'order' ? 'Ticket Order' : ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`
         : `Store sedang closed. ${operatingStatusText()}`,
       flags: MessageFlags.Ephemeral
     });
@@ -1785,13 +1796,10 @@ async function handleServiceStatusCommand(interaction, isOpen) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   if (service === 'order') {
-    const orderServices = ['order', ...ORDER_TICKET_SERVICES.map((item) => item.service)];
-    await Promise.all(
-      orderServices.map((item) => updateServiceStatus(interaction.guild, item, isOpen, interaction.user.id))
-    );
+    await updateServiceStatus(interaction.guild, service, isOpen, interaction.user.id);
 
     const statusText = isOpen ? 'OPEN 🟢' : 'CLOSED 🔴';
-    await interaction.editReply(`Semua tombol Ticket Order sekarang ${statusText}. Server stats dan tombol ticket sedang diperbarui di background.`);
+    await interaction.editReply(`Ticket Order sekarang ${statusText}. Tombol layanan tetap mengikuti server stats masing-masing dan sedang diperbarui di background.`);
     refreshGuildUiInBackground(interaction.guild, 'Service status');
     return;
   }
