@@ -1010,6 +1010,7 @@ async function setupServer(interaction) {
 }
 
 async function refreshPanels(guild) {
+  await loadServiceStatuses(guild.id);
   await loadPanelTextOverrides(guild.id);
 
   const { data: panels } = await supabase
