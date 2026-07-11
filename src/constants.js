@@ -90,6 +90,39 @@ export const SERVICE_DEFINITIONS = {
   }
 };
 
+export const ORDER_TICKET_SERVICES = [
+  {
+    service: 'gift-gamepass',
+    label: 'Gamepass & GIG',
+    emoji: '🎁',
+    description: 'Gift gamepass dan item game sesuai kebutuhan kamu.'
+  },
+  {
+    service: 'group-payout',
+    label: 'Payout Instant',
+    emoji: '💸',
+    description: 'Robux payout cepat melalui komunitas / group.'
+  },
+  {
+    service: 'via-login',
+    label: 'VILOG',
+    emoji: '⚡',
+    description: 'Top up Robux via login dengan proses aman dan cepat.'
+  },
+  {
+    service: 'via-username',
+    label: 'Robux Via Username',
+    emoji: '🆔',
+    description: 'Top up Robux menggunakan username Roblox tanpa login akun.'
+  },
+  {
+    service: 'limited',
+    label: 'Limited Item',
+    emoji: '💎',
+    description: 'Pembelian item limited Roblox.'
+  }
+];
+
 export const TICKET_SERVICE_TYPES = new Set(['order', 'rekber', 'support']);
 
 export const CATEGORY = {

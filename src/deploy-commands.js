@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { config } from './config.js';
+import { ORDER_TICKET_SERVICES } from './constants.js';
 
 const serviceCommands = [
   ['order', 'Ticket order'],
@@ -17,14 +18,6 @@ const editablePanels = [
   ['price_via_username', 'Price Via Username'],
   ['market_item_tumbal_trade', 'Item Tumbal Trade'],
   ['market_value_update', 'Value Update Realtime']
-];
-
-const orderTicketServices = [
-  ['gift-gamepass', 'Gamepass & GIG'],
-  ['group-payout', 'Payout Instant'],
-  ['via-login', 'VILOG'],
-  ['via-username', 'Robux Via Username'],
-  ['limited', 'Limited Item']
 ];
 
 function addServiceSubcommands(command) {
@@ -93,7 +86,7 @@ const commands = [
         .setName('service')
         .setDescription('Layanan order opsional jika type Order')
         .setRequired(false)
-        .addChoices(...orderTicketServices.map(([value, name]) => ({ name, value })))
+        .addChoices(...ORDER_TICKET_SERVICES.map(({ service, label }) => ({ name: label, value: service })))
     ),
   new SlashCommandBuilder()
     .setName('set-panel-text')

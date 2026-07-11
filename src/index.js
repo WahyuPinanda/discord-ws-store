@@ -17,7 +17,7 @@ import {
 } from 'discord.js';
 import { existsSync } from 'node:fs';
 import { config } from './config.js';
-import { CATEGORY, CHANNEL, REKBER_IMAGE_PATH, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFIED_ROLE_ALIASES, VERIFY_IMAGE_PATH } from './constants.js';
+import { CATEGORY, CHANNEL, ORDER_TICKET_SERVICES, REKBER_IMAGE_PATH, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TICKET_SERVICE_TYPES, TIER_ROLES, VERIFIED_ROLE_ALIASES, VERIFY_IMAGE_PATH } from './constants.js';
 import { keepSupabaseAwake, supabase } from './db.js';
 import { createAntiSpamFeature } from './features/anti-spam.js';
 import { createGiveawayFeature } from './features/giveaways.js';
@@ -268,39 +268,6 @@ function ticketTypeLabel(type) {
   };
   return labels[type] || 'Ticket';
 }
-
-const ORDER_TICKET_SERVICES = [
-  {
-    service: 'gift-gamepass',
-    label: 'Gamepass & GIG',
-    emoji: '🎁',
-    description: 'Gift gamepass dan item game sesuai kebutuhan kamu.'
-  },
-  {
-    service: 'group-payout',
-    label: 'Payout Instant',
-    emoji: '💸',
-    description: 'Robux payout cepat melalui komunitas / group.'
-  },
-  {
-    service: 'via-login',
-    label: 'VILOG',
-    emoji: '⚡',
-    description: 'Top up Robux via login dengan proses aman dan cepat.'
-  },
-  {
-    service: 'via-username',
-    label: 'Robux Via Username',
-    emoji: '🆔',
-    description: 'Top up Robux menggunakan username Roblox tanpa login akun.'
-  },
-  {
-    service: 'limited',
-    label: 'Limited Item',
-    emoji: '💎',
-    description: 'Pembelian item limited Roblox.'
-  }
-];
 
 function orderTicketService(service) {
   return ORDER_TICKET_SERVICES.find((item) => item.service === service) || null;
