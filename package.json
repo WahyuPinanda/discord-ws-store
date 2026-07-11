@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "deploy:commands": "node src/deploy-commands.js",
+    "deploy:commands": "node src/routes/deploy-commands.js",
     "test": "node --test"
   },
   "dependencies": {

@@ -25,13 +25,14 @@ echo "Current commit:"
 git log -1 --oneline
 
 echo "Installing locked dependencies and running preflight checks..."
+node -e "const major=Number(process.versions.node.split('.')[0]); if(major<22){console.error('Node.js 22 or newer is required. Current: '+process.version); process.exit(1)}"
 npm ci
 npm test
 find src test -type f -name '*.js' -exec node --check {} \;
 
 echo "Checking that required production features exist..."
-grep -q "QRIS button, voice Room 1, server stats" src/index.js
-grep -q "setName('open')" src/deploy-commands.js
+grep -q "QRIS button, voice Room 1, server stats" src/app.js
+grep -q "setName('open')" src/routes/deploy-commands.js
 grep -q "service_statuses" supabase/schema.sql
 
 echo "Building and pushing ${IMAGE}..."

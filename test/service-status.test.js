@@ -4,7 +4,7 @@ import {
   createServiceStatusFeature,
   manualOverrideIsActive,
   normalizeServiceName
-} from '../src/features/service-status.js';
+} from '../src/services/service-status-service.js';
 
 const OPEN_HOUR = 10;
 const CLOSE_HOUR = 22;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ChannelType } from 'discord.js';
-import { createTicketCreationFeature } from '../src/features/ticket-creation.js';
+import { createTicketCreationFeature } from '../src/services/ticket-creation-service.js';
 
 function createTicketDbStub() {
   const tickets = [];

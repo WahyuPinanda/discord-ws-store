@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EmbedBuilder } from 'discord.js';
-import { createTicketPanelFeature } from '../src/features/ticket-panels.js';
+import { createTicketPanelFeature } from '../src/services/ticket-panel-service.js';
 
 const services = [
   { service: 'gift-gamepass', label: 'Gamepass & GIG', emoji: '🎁', description: 'Gamepass.' },

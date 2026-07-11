@@ -6,7 +6,7 @@ import {
   time,
   TimestampStyles
 } from 'discord.js';
-import { ROLE, TIER_ROLES, VERIFIED_ROLE_ALIASES } from '../constants.js';
+import { ROLE, TIER_ROLES, VERIFIED_ROLE_ALIASES } from '../config/constants.js';
 
 export const GIVEAWAY_ENTRY_ROLES = [
   { role: TIER_ROLES[0].name, entries: 12 },

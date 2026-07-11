@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { config } from './config.js';
-import { ORDER_TICKET_SERVICES } from './constants.js';
+import { config } from '../config/env.js';
+import { ORDER_TICKET_SERVICES } from '../config/constants.js';
 
 const serviceCommands = [
   ['order', 'Ticket order'],

@@ -81,8 +81,10 @@ QRIS_IMAGE_PATH=assets/qris-ws-store.png
 
 ## 4. Install dan Jalankan
 
+Gunakan Node.js 22 atau lebih baru.
+
 ```bash
-npm install
+npm ci
 npm run deploy:commands
 npm start
 ```
@@ -200,15 +202,43 @@ Script `scripts/deploy-cloudrun.sh` menjalankan `npm ci`, unit test, dan pemerik
 
 ## Struktur Kode
 
-- `src/index.js`: wiring bot, setup server, event routing, dan orkestrasi fitur
-- `src/features/service-status.js`: cache status, manual override, dan aturan jam operasional
-- `src/features/ticket-panels.js`: embed serta tombol panel ticket
-- `src/features/ticket-creation.js`: pembuatan channel ticket, lock klik ganda, dan rollback kegagalan
-- `src/features/giveaways.js`: giveaway
-- `src/features/invite-tracker.js`: welcome dan invite tracker
-- `src/features/anti-spam.js`: moderasi spam
-- `src/features/market.js`: panel market dan pricelist
-- `test/`: unit test aturan waktu, panel, dan concurrency ticket
+```txt
+src/
+├── config/
+│   ├── constants.js
+│   └── env.js
+├── controllers/
+│   └── interaction-controller.js
+├── libs/
+│   ├── database.js
+│   ├── health-server.js
+│   └── store-time.js
+├── middlewares/
+│   └── interaction-error-handler.js
+├── routes/
+│   ├── deploy-commands.js
+│   └── discord-event-routes.js
+├── services/
+│   ├── anti-spam-service.js
+│   ├── giveaway-service.js
+│   ├── info-panel-service.js
+│   ├── invite-tracker-service.js
+│   ├── market-panel-service.js
+│   ├── service-status-service.js
+│   ├── ticket-creation-service.js
+│   └── ticket-panel-service.js
+├── app.js
+└── index.js
+```
+
+- `index.js` hanya menjalankan aplikasi.
+- `app.js` menyusun dependency dan lifecycle bot.
+- `controllers` memetakan command, button, dan modal ke use case.
+- `middlewares` menangani error sebelum respons dikirim ke Discord.
+- `routes` mendaftarkan event Discord dan slash command.
+- `services` berisi aturan bisnis per fitur.
+- `libs` berisi adapter database, waktu, dan health server.
+- `test/` berisi unit test status, routing, panel, dan concurrency ticket.
 
 ### 10.1 Buat GitHub repo
 
