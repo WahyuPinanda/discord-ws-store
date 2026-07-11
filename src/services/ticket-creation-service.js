@@ -7,7 +7,9 @@ export function createTicketCreationFeature({
   orderTicketService,
   ticketTypeLabel,
   ticketControlRows,
-  embedBase
+  embedBase,
+  unwrapSupabase,
+  logger = console
 }) {
   const creationLocks = new Map();
 
@@ -50,6 +52,9 @@ export function createTicketCreationFeature({
       const activeCategory = interaction.guild.channels.cache.find(
         (item) => item.type === ChannelType.GuildCategory && item.name === activeTicketCategoryName
       );
+      if (!activeCategory) {
+        throw new Error(`Ticket category not found: ${activeTicketCategoryName}`);
+      }
       const overwrites = [
         { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         {
@@ -129,13 +134,14 @@ export function createTicketCreationFeature({
       if (channel) {
         await channel.delete('Rolling back failed ticket creation').catch(() => null);
       }
+      const cleanupResult = await supabase
+        .from('tickets')
+        .update({ status: 'closed', closed_at: new Date().toISOString() })
+        .eq('id', ticket.id);
       try {
-        await supabase
-          .from('tickets')
-          .update({ status: 'closed', closed_at: new Date().toISOString() })
-          .eq('id', ticket.id);
-      } catch {
-        // Preserve the original failure; cleanup is best effort.
+        unwrapSupabase(cleanupResult, 'Failed to clean up ticket creation');
+      } catch (cleanupError) {
+        logger.error(cleanupError.message);
       }
       throw error;
     }

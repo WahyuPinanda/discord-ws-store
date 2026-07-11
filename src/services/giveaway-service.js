@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { ROLE, TIER_ROLES, VERIFIED_ROLE_ALIASES } from '../config/constants.js';
 
-export const GIVEAWAY_ENTRY_ROLES = [
+const GIVEAWAY_ENTRY_ROLES = [
   { role: TIER_ROLES[0].name, entries: 12 },
   { role: TIER_ROLES[1].name, entries: 8 },
   { role: TIER_ROLES[2].name, entries: 6 },
@@ -43,6 +43,7 @@ function parseDurationMs(value) {
   if (!match) return null;
 
   const amount = Number(match[1]);
+  if (!Number.isSafeInteger(amount) || amount <= 0) return null;
   const unit = match[2];
   const multipliers = {
     m: 60_000,
@@ -50,7 +51,8 @@ function parseDurationMs(value) {
     d: 24 * 60 * 60_000
   };
 
-  return amount * multipliers[unit];
+  const duration = amount * multipliers[unit];
+  return duration <= 365 * 24 * 60 * 60_000 ? duration : null;
 }
 
 function giveawayEntriesForMember(member) {
@@ -73,20 +75,21 @@ function giveawayJoinRow(giveawayId, disabled = false) {
 }
 
 function pickWeightedWinners(entries, winnersCount) {
-  const pool = [];
-  for (const entry of entries) {
-    for (let index = 0; index < entry.entries; index += 1) pool.push(entry.user_id);
-  }
-
+  const candidates = [...entries];
   const winners = [];
-  while (pool.length && winners.length < winnersCount) {
-    const pickedId = pool[Math.floor(Math.random() * pool.length)];
-    const pickedEntry = entries.find((entry) => entry.user_id === pickedId);
-    winners.push(pickedEntry);
-
-    for (let index = pool.length - 1; index >= 0; index -= 1) {
-      if (pool[index] === pickedId) pool.splice(index, 1);
+  while (candidates.length && winners.length < winnersCount) {
+    const totalWeight = candidates.reduce((total, entry) => total + entry.entries, 0);
+    let target = Math.random() * totalWeight;
+    let pickedIndex = 0;
+    for (let index = 0; index < candidates.length; index += 1) {
+      target -= candidates[index].entries;
+      if (target < 0) {
+        pickedIndex = index;
+        break;
+      }
     }
+    winners.push(candidates[pickedIndex]);
+    candidates.splice(pickedIndex, 1);
   }
 
   return winners;
@@ -100,6 +103,7 @@ export function createGiveawayFeature({
   channelMatchesName,
   giveawayChannelName
 }) {
+  const endingGiveaways = new Set();
   function giveawayRulesText(guild) {
     return GIVEAWAY_ENTRY_ROLES
       .map((rule) => {
@@ -176,7 +180,7 @@ export function createGiveawayFeature({
     await message.edit(giveawayPayload(guild, giveaway, participantCount)).catch(() => null);
   }
 
-  async function endGiveaway(guild, giveawayId, endedBy = null) {
+  async function endGiveawayUnlocked(guild, giveawayId, endedBy = null) {
     const { data: giveaway, error: giveawayError } = await supabase
       .from('giveaways')
       .select('*')
@@ -218,10 +222,12 @@ export function createGiveawayFeature({
         winner_ids: winnerIds
       })
       .eq('id', giveaway.id)
+      .eq('status', 'active')
       .select('*')
-      .single();
+      .maybeSingle();
 
     if (updateError) throw updateError;
+    if (!endedGiveaway) return { giveaway, winners: [] };
 
     const participantCount = entries?.length || 0;
     const channel = await client.channels.fetch(giveaway.channel_id).catch(() => null);
@@ -237,6 +243,16 @@ export function createGiveawayFeature({
     }
 
     return { giveaway: endedGiveaway, winners };
+  }
+
+  async function endGiveaway(guild, giveawayId, endedBy = null) {
+    if (endingGiveaways.has(giveawayId)) return { giveaway: null, winners: [], inProgress: true };
+    endingGiveaways.add(giveawayId);
+    try {
+      return await endGiveawayUnlocked(guild, giveawayId, endedBy);
+    } finally {
+      endingGiveaways.delete(giveawayId);
+    }
   }
 
   async function createGiveaway(interaction) {
@@ -370,6 +386,10 @@ export function createGiveawayFeature({
 
     if (subcommand === 'end') {
       const result = await endGiveaway(interaction.guild, giveawayId, interaction.user.id);
+      if (result.inProgress) {
+        await interaction.editReply('Giveaway ini sedang diproses. Silakan tunggu sebentar.');
+        return;
+      }
       if (result.schemaMissing) {
         await interaction.editReply(missingGiveawaySchemaMessage());
         return;

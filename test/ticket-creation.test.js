@@ -119,6 +119,10 @@ function createContext({ failSend = false } = {}) {
     orderTicketService: () => ({ service: 'limited', label: 'Limited Item', emoji: '💎' }),
     ticketTypeLabel: () => 'Order Ticket',
     ticketControlRows: () => [],
+    unwrapSupabase: (result) => {
+      if (result.error) throw result.error;
+      return result.data;
+    },
     embedBase: () => ({
       setTitle() {
         return this;

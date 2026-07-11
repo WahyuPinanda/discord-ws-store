@@ -37,7 +37,8 @@ test('order panel uses effective gate status and raw service statuses', () => {
     buttons.map((button) => [button.data.custom_id, button.data.disabled || false])
   );
 
-  assert.match(description, /OPEN \| Gerbang Ticket Order/);
+  assert.equal(description.includes('Gerbang Ticket Order'), false);
+  assert.equal(description.includes('mengikuti server stats masing-masing'), false);
   assert.match(description, /Gamepass & GIG[\s\S]*Status: OPEN/);
   assert.match(description, /Payout Instant[\s\S]*Status: CLOSED/);
   assert.equal(disabledById['ticket:create:order:gift-gamepass'], false);
@@ -66,6 +67,6 @@ test('closed order gate disables every service button', () => {
   const payload = feature.ticketPanelPayload('order');
   const buttons = payload.components.flatMap((row) => row.components);
 
-  assert.match(payload.embeds[0].data.description, /CLOSED \| Gerbang Ticket Order/);
+  assert.equal(payload.embeds[0].data.description.includes('Gerbang Ticket Order'), false);
   assert.equal(buttons.every((button) => button.data.disabled), true);
 });

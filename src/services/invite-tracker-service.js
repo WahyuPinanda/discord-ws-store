@@ -3,7 +3,8 @@ const inviteCache = new Map();
 export function createInviteTrackerFeature({
   channelMatchesName,
   unverifiedRoleName,
-  welcomeChannelName
+  welcomeChannelName,
+  logger = console
 }) {
   async function refreshInviteCache(guild) {
     const invites = await guild.invites.fetch().catch((error) => {
@@ -71,12 +72,14 @@ export function createInviteTrackerFeature({
 
     await channel.send({
       content: `<@${member.id}> has been invited by ${invitedBy} and has now ${uses} invite${uses === 1 ? '' : 's'}.`
-    }).catch(() => null);
+    }).catch((error) => logger.warn('Failed to send welcome invite log:', error.message));
   }
 
   async function handleGuildMemberAdd(member) {
     const role = member.guild.roles.cache.find((item) => item.name === unverifiedRoleName);
-    if (role) await member.roles.add(role).catch(() => null);
+    if (role) {
+      await member.roles.add(role).catch((error) => logger.warn('Failed to add unverified role:', error.message));
+    }
 
     const usedInvite = await detectUsedInvite(member.guild);
     await sendWelcomeInviteLog(member, usedInvite);

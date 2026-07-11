@@ -123,8 +123,6 @@ export const ORDER_TICKET_SERVICES = [
   }
 ];
 
-export const TICKET_SERVICE_TYPES = new Set(['order', 'rekber', 'support']);
-
 export const CATEGORY = {
   stats: '📊 SERVER STATS 📊',
   gate: '👋 WINNER STORE GATE',

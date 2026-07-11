@@ -100,17 +100,15 @@ export function createTicketPanelFeature({
       ].join('\n'),
       support: 'Gunakan ticket ini untuk pertanyaan, kendala order, atau bantuan umum.'
     };
-    const statusText = type === 'order'
-      ? `${ticketServiceIsAvailable(config.guildId, 'order') ? 'OPEN' : 'CLOSED'} | Gerbang Ticket Order mengikuti jadwal atau status manual staff.\nStatus tombol layanan mengikuti server stats masing-masing.`
-      : type === 'rekber'
-        ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
-        : serviceStatusIsSet(config.guildId, type)
-          ? `${serviceIsOpen(config.guildId, type) ? 'OPEN' : 'CLOSED'} | Status diatur manual oleh staff. Jam normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
-          : operatingStatusText();
+    const statusText = type === 'rekber'
+      ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
+      : serviceStatusIsSet(config.guildId, type)
+        ? `${serviceIsOpen(config.guildId, type) ? 'OPEN' : 'CLOSED'} | Status diatur manual oleh staff. Jam normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
+        : operatingStatusText();
 
     const embed = embedBase()
       .setTitle(`🎟️ ${ticketTypeLabel(type)}`)
-      .setDescription(`${description[type]}\n\n${statusText}`);
+      .setDescription(type === 'order' ? description[type] : `${description[type]}\n\n${statusText}`);
     const payload = {
       embeds: [embed],
       components: type === 'order'

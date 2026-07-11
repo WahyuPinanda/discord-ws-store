@@ -31,7 +31,7 @@ npm test
 find src test -type f -name '*.js' -exec node --check {} \;
 
 echo "Checking that required production features exist..."
-grep -q "QRIS button, voice Room 1, server stats" src/app.js
+grep -q "QRIS button, voice Room 1, server stats" src/services/server-management-service.js
 grep -q "setName('open')" src/routes/deploy-commands.js
 grep -q "service_statuses" supabase/schema.sql
 

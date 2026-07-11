@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config/env.js';
+import { unwrapSupabase } from './supabase-result.js';
 
 export const supabase = createClient(
   config.supabaseUrl,
@@ -13,13 +14,16 @@ export const supabase = createClient(
 );
 
 export async function keepSupabaseAwake() {
-  await supabase
+  unwrapSupabase(await supabase
     .from('bot_heartbeat')
     .upsert({
       id: 'ws-store',
       last_ping: new Date().toISOString(),
       note: 'Daily bot heartbeat for WS Store Official'
-    });
+    }), 'Supabase heartbeat update failed');
 
-  await supabase.from('customers').select('discord_user_id').limit(1);
+  unwrapSupabase(
+    await supabase.from('customers').select('discord_user_id').limit(1),
+    'Supabase heartbeat read failed'
+  );
 }

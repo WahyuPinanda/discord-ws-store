@@ -117,12 +117,21 @@ create trigger panel_text_overrides_touch_updated_at
 before update on public.panel_text_overrides
 for each row execute function public.touch_updated_at();
 
-alter table public.customers disable row level security;
-alter table public.tickets disable row level security;
-alter table public.transactions disable row level security;
-alter table public.ticket_panels disable row level security;
-alter table public.bot_heartbeat disable row level security;
-alter table public.service_statuses disable row level security;
-alter table public.panel_text_overrides disable row level security;
-alter table public.giveaways disable row level security;
-alter table public.giveaway_entries disable row level security;
+create index if not exists tickets_active_lookup_idx
+on public.tickets (guild_id, opener_id, type, status);
+
+create index if not exists transactions_buyer_created_idx
+on public.transactions (buyer_id, created_at desc);
+
+create index if not exists giveaways_due_idx
+on public.giveaways (status, ends_at);
+
+alter table public.customers enable row level security;
+alter table public.tickets enable row level security;
+alter table public.transactions enable row level security;
+alter table public.ticket_panels enable row level security;
+alter table public.bot_heartbeat enable row level security;
+alter table public.service_statuses enable row level security;
+alter table public.panel_text_overrides enable row level security;
+alter table public.giveaways enable row level security;
+alter table public.giveaway_entries enable row level security;

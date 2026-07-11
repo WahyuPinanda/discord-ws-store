@@ -27,6 +27,8 @@ Fitur utama:
 supabase/schema.sql
 ```
 
+Jalankan kembali schema terbaru setelah update bot. Script bersifat idempotent, mengaktifkan Row Level Security, dan menambah index tanpa menghapus transaksi lama.
+
 4. Ambil:
    - `Project URL`
    - `Secret key` untuk server-side
@@ -208,11 +210,14 @@ src/
 │   ├── constants.js
 │   └── env.js
 ├── controllers/
-│   └── interaction-controller.js
+│   ├── admin-controller.js
+│   ├── interaction-controller.js
+│   └── ticket-controller.js
 ├── libs/
 │   ├── database.js
 │   ├── health-server.js
-│   └── store-time.js
+│   ├── store-time.js
+│   └── supabase-result.js
 ├── middlewares/
 │   └── interaction-error-handler.js
 ├── routes/
@@ -220,13 +225,19 @@ src/
 │   └── discord-event-routes.js
 ├── services/
 │   ├── anti-spam-service.js
+│   ├── discord-resource-service.js
 │   ├── giveaway-service.js
 │   ├── info-panel-service.js
 │   ├── invite-tracker-service.js
 │   ├── market-panel-service.js
+│   ├── panel-registry-service.js
+│   ├── server-management-service.js
 │   ├── service-status-service.js
 │   ├── ticket-creation-service.js
-│   └── ticket-panel-service.js
+│   ├── ticket-panel-service.js
+│   ├── transaction-service.js
+│   ├── transcript-service.js
+│   └── ui-refresh-service.js
 ├── app.js
 └── index.js
 ```

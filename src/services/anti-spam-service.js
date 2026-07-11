@@ -1,4 +1,5 @@
 const spamState = new Map();
+let lastSpamStateCleanupAt = 0;
 
 function pruneSpamTimestamps(timestamps, windowMs, now = Date.now()) {
   return timestamps.filter((timestamp) => now - timestamp <= windowMs);
@@ -18,6 +19,17 @@ function getSpamBucket(message, settings) {
   spamState.set(key, existing);
 
   return existing;
+}
+
+function cleanupSpamState(settings, now = Date.now()) {
+  if (now - lastSpamStateCleanupAt < settings.warningExpiresMs) return;
+  lastSpamStateCleanupAt = now;
+
+  for (const [key, bucket] of spamState) {
+    const lastTimestamp = bucket.timestamps.at(-1) || 0;
+    const lastActivity = Math.max(lastTimestamp, bucket.warnedAt, bucket.lastActionAt);
+    if (now - lastActivity > settings.warningExpiresMs) spamState.delete(key);
+  }
 }
 
 async function deleteRecentSpamMessages(message, settings) {
@@ -75,6 +87,7 @@ export function createAntiSpamFeature({ settings, memberIsStaff }) {
     if (memberIsStaff(message.member)) return;
 
     const now = Date.now();
+    cleanupSpamState(settings, now);
     const bucket = getSpamBucket(message, settings);
     const rapidCount = pruneSpamTimestamps(bucket.timestamps, settings.rapidWindowMs, now).length;
     const normalCount = bucket.timestamps.length;
