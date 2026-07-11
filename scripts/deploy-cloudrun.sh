@@ -55,7 +55,7 @@ SUPABASE_SECRET_KEY="$(gcloud secrets versions access latest --secret=supabase-s
 export DISCORD_CLIENT_ID
 export DISCORD_GUILD_ID
 export SUPABASE_URL
-npm install
+npm ci
 npm run deploy:commands
 
 echo "Recent logs:"

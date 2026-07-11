@@ -30,6 +30,9 @@ import { formatRupiah, getStoreDateKey, getStoreHour, isStoreOpen, operatingStat
 const serviceStatusCache = new Map();
 const panelTextOverrideCache = new Map();
 let lastStoreOpenState = null;
+let lastPeriodicUiSnapshot = null;
+let periodicUiRefreshRunning = false;
+let giveawayAutoEndRunning = false;
 let panelTextOverrideSchemaWarningShown = false;
 
 const client = new Client({
@@ -150,6 +153,37 @@ function orderTicketServiceIsAvailable(guildId, service) {
     && ticketServiceIsAvailable(guildId, service);
 }
 
+function guildUiSnapshot(guildId) {
+  const serviceStates = Object.keys(SERVICE_DEFINITIONS)
+    .sort()
+    .map((service) => {
+      const cached = serviceStatusCache.get(serviceCacheKey(guildId, service));
+      return [
+        service,
+        serviceStatusIsSet(guildId, service),
+        serviceIsOpen(guildId, service),
+        cached?.updatedAt || ''
+      ].join(':');
+    });
+
+  return JSON.stringify({
+    storeOpen: isStoreOpen(),
+    serviceStates
+  });
+}
+
+async function refreshGuildUiIfChanged(guild) {
+  await loadServiceStatuses(guild.id);
+  const snapshot = guildUiSnapshot(guild.id);
+
+  if (snapshot === lastPeriodicUiSnapshot) return false;
+
+  lastPeriodicUiSnapshot = snapshot;
+  await refreshServerStats(guild);
+  await refreshPanels(guild, { reloadServiceStatuses: false });
+  return true;
+}
+
 async function loadServiceStatuses(guildId) {
   const { data, error } = await supabase
     .from('service_statuses')
@@ -249,6 +283,7 @@ function refreshGuildUiInBackground(guild, reason) {
     try {
       await refreshServerStats(guild);
       await refreshPanels(guild);
+      lastPeriodicUiSnapshot = guildUiSnapshot(guild.id);
     } catch (error) {
       console.warn(`${reason} refresh failed:`, error.message);
     }
@@ -259,6 +294,7 @@ function refreshPanelsInBackground(guild, reason) {
   setImmediate(async () => {
     try {
       await refreshPanels(guild);
+      lastPeriodicUiSnapshot = guildUiSnapshot(guild.id);
     } catch (error) {
       console.warn(`${reason} refresh failed:`, error.message);
     }
@@ -1009,8 +1045,10 @@ async function setupServer(interaction) {
   await interaction.editReply('Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, welcome invite tracker, dan admin transcript sudah dibuat.');
 }
 
-async function refreshPanels(guild) {
-  await loadServiceStatuses(guild.id);
+async function refreshPanels(guild, options = {}) {
+  if (options.reloadServiceStatuses !== false) {
+    await loadServiceStatuses(guild.id);
+  }
   await loadPanelTextOverrides(guild.id);
 
   const { data: panels } = await supabase
@@ -1904,6 +1942,7 @@ client.once('ready', async () => {
     await refreshInviteCache(guild).catch((error) => console.warn('Invite cache refresh failed:', error.message));
     await refreshServerStats(guild).catch((error) => console.warn('Server stats refresh failed:', error.message));
     await refreshPanels(guild).catch((error) => console.warn('Panel refresh failed:', error.message));
+    lastPeriodicUiSnapshot = guildUiSnapshot(guild.id);
     await checkStoreStatusAnnouncement(guild).catch((error) => console.warn('Store status announcement check failed:', error.message));
     await endDueGiveaways().catch((error) => console.warn('Giveaway auto-end failed:', error.message));
   }
@@ -1913,16 +1952,29 @@ client.once('ready', async () => {
   }, 24 * 60 * 60 * 1000);
 
   setInterval(async () => {
+    if (periodicUiRefreshRunning) return;
+    periodicUiRefreshRunning = true;
+
     const targetGuild = await client.guilds.fetch(config.guildId).catch(() => null);
-    if (targetGuild) {
-      await checkStoreStatusAnnouncement(targetGuild).catch((error) => console.warn('Store status announcement check failed:', error.message));
-      await refreshServerStats(targetGuild).catch((error) => console.warn('Server stats refresh failed:', error.message));
-      await refreshPanels(targetGuild).catch((error) => console.warn('Panel refresh failed:', error.message));
+    try {
+      if (targetGuild) {
+        await checkStoreStatusAnnouncement(targetGuild).catch((error) => console.warn('Store status announcement check failed:', error.message));
+        await refreshGuildUiIfChanged(targetGuild).catch((error) => console.warn('UI refresh check failed:', error.message));
+      }
+    } finally {
+      periodicUiRefreshRunning = false;
     }
   }, 60 * 1000);
 
   setInterval(async () => {
-    await endDueGiveaways().catch((error) => console.warn('Giveaway auto-end failed:', error.message));
+    if (giveawayAutoEndRunning) return;
+    giveawayAutoEndRunning = true;
+
+    try {
+      await endDueGiveaways().catch((error) => console.warn('Giveaway auto-end failed:', error.message));
+    } finally {
+      giveawayAutoEndRunning = false;
+    }
   }, 30 * 1000);
 });
 
