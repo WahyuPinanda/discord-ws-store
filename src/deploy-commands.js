@@ -19,6 +19,14 @@ const editablePanels = [
   ['market_value_update', 'Value Update Realtime']
 ];
 
+const orderTicketServices = [
+  ['gift-gamepass', 'Gamepass & GIG'],
+  ['group-payout', 'Payout Instant'],
+  ['via-login', 'VILOG'],
+  ['via-username', 'Robux Via Username'],
+  ['limited', 'Limited Item']
+];
+
 function addServiceSubcommands(command) {
   for (const [name, description] of serviceCommands) {
     command.addSubcommand((subcommand) =>
@@ -79,6 +87,13 @@ const commands = [
           { name: 'Rekber', value: 'rekber' },
           { name: 'Support', value: 'support' }
         )
+    )
+    .addStringOption((option) =>
+      option
+        .setName('service')
+        .setDescription('Layanan order opsional jika type Order')
+        .setRequired(false)
+        .addChoices(...orderTicketServices.map(([value, name]) => ({ name, value })))
     ),
   new SlashCommandBuilder()
     .setName('set-panel-text')

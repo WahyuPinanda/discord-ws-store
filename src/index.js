@@ -269,6 +269,70 @@ function ticketTypeLabel(type) {
   return labels[type] || 'Ticket';
 }
 
+const ORDER_TICKET_SERVICES = [
+  {
+    service: 'gift-gamepass',
+    label: 'Gamepass & GIG',
+    emoji: '🎁',
+    description: 'Gift gamepass dan item game sesuai kebutuhan kamu.'
+  },
+  {
+    service: 'group-payout',
+    label: 'Payout Instant',
+    emoji: '💸',
+    description: 'Robux payout cepat melalui komunitas / group.'
+  },
+  {
+    service: 'via-login',
+    label: 'VILOG',
+    emoji: '⚡',
+    description: 'Top up Robux via login dengan proses aman dan cepat.'
+  },
+  {
+    service: 'via-username',
+    label: 'Robux Via Username',
+    emoji: '🆔',
+    description: 'Top up Robux menggunakan username Roblox tanpa login akun.'
+  },
+  {
+    service: 'limited',
+    label: 'Limited Item',
+    emoji: '💎',
+    description: 'Pembelian item limited Roblox.'
+  }
+];
+
+function orderTicketService(service) {
+  return ORDER_TICKET_SERVICES.find((item) => item.service === service) || null;
+}
+
+function serviceStatusText(service) {
+  if (serviceStatusIsSet(config.guildId, service)) {
+    return serviceIsOpen(config.guildId, service)
+      ? 'OPEN | Status diatur manual oleh staff.'
+      : 'CLOSED | Status diatur manual oleh staff.';
+  }
+
+  return operatingStatusText();
+}
+
+function orderTicketRows() {
+  const buttons = ORDER_TICKET_SERVICES.map((item) =>
+    new ButtonBuilder()
+      .setCustomId(`ticket:create:order:${item.service}`)
+      .setLabel(item.label)
+      .setEmoji(item.emoji)
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!ticketServiceIsAvailable(config.guildId, item.service))
+  );
+
+  return [
+    new ActionRowBuilder().addComponents(buttons.slice(0, 2)),
+    new ActionRowBuilder().addComponents(buttons.slice(2, 4)),
+    new ActionRowBuilder().addComponents(buttons.slice(4))
+  ];
+}
+
 function ticketOpenButton(type) {
   const available = ticketServiceIsAvailable(config.guildId, type);
   const labels = {
@@ -287,7 +351,17 @@ function ticketOpenButton(type) {
 
 function ticketPanelPayload(type) {
   const description = {
-    order: 'Klik tombol di bawah untuk membeli produk WS Store. Ticket hanya dapat dibuka saat jam operasional.',
+    order: [
+      '**Pilih layanan yang ingin kamu order lewat tombol di bawah.**',
+      '',
+      ...ORDER_TICKET_SERVICES.flatMap((item) => [
+        `${item.emoji} **${item.label}**`,
+        `${item.description}`,
+        `Status: ${serviceStatusText(item.service)}`,
+        ''
+      ]),
+      `Jam operasional normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}.`
+    ].join('\n').trim(),
     rekber: [
       '**WS Store Middleman Service**',
       'Buka ticket ini jika kamu butuh penengah transaksi agar proses jual-beli lebih tertata, aman, dan tercatat.',
@@ -307,11 +381,13 @@ function ticketPanelPayload(type) {
     ].join('\n'),
     support: 'Gunakan ticket ini untuk pertanyaan, kendala order, atau bantuan umum.'
   };
-  const statusText = type === 'rekber'
-    ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
-    : serviceStatusIsSet(config.guildId, type)
-      ? `${serviceIsOpen(config.guildId, type) ? 'OPEN' : 'CLOSED'} | Status diatur manual oleh staff. Jam normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
-      : operatingStatusText();
+  const statusText = type === 'order'
+    ? 'Status tombol mengikuti server stats masing-masing layanan.'
+    : type === 'rekber'
+      ? `OPEN | Rekber selalu bisa dibuka. Jam operasional store ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
+      : serviceStatusIsSet(config.guildId, type)
+        ? `${serviceIsOpen(config.guildId, type) ? 'OPEN' : 'CLOSED'} | Status diatur manual oleh staff. Jam normal ${String(config.openHour).padStart(2, '0')}:00-${String(config.closeHour).padStart(2, '0')}:00 ${config.timezoneLabel}`
+        : operatingStatusText();
 
   const embed = embedBase()
     .setTitle(`🎟️ ${ticketTypeLabel(type)}`)
@@ -320,7 +396,9 @@ function ticketPanelPayload(type) {
     embeds: [
       embed
     ],
-    components: [new ActionRowBuilder().addComponents(ticketOpenButton(type))]
+    components: type === 'order'
+      ? orderTicketRows()
+      : [new ActionRowBuilder().addComponents(ticketOpenButton(type))]
   };
 
   if (type === 'rekber' && existsSync(REKBER_IMAGE_PATH)) {
@@ -996,8 +1074,9 @@ async function handleVerify(interaction) {
 }
 
 async function createTicketForMember(interaction, type, openerMember, options = {}) {
-  const { bypassStoreHours = false, openedByStaff = false } = options;
+  const { bypassStoreHours = false, openedByStaff = false, service = null } = options;
   const openerUser = openerMember.user;
+  const selectedService = type === 'order' ? orderTicketService(service) : null;
 
   const { data: existing } = await supabase
     .from('tickets')
@@ -1047,7 +1126,7 @@ async function createTicketForMember(interaction, type, openerMember, options = 
     name: `ticket-${ticket.id}`,
     type: ChannelType.GuildText,
     parent: activeCategory,
-    topic: `${ticketTypeLabel(type)} | opener:${openerUser.id} | ticket:${ticket.id}`,
+    topic: `${ticketTypeLabel(type)}${selectedService ? ` | service:${selectedService.label}` : ''} | opener:${openerUser.id} | ticket:${ticket.id}`,
     permissionOverwrites: overwrites
   });
 
@@ -1065,9 +1144,19 @@ async function createTicketForMember(interaction, type, openerMember, options = 
           `Hello <@${openerUser.id}>! Terima kasih telah membuka ticket.`,
           openedByStaff ? `Ticket ini dibukakan oleh staff <@${interaction.user.id}>.` : null,
           bypassStoreHours ? 'Catatan: ticket ini dibuka oleh staff di luar jam operasional.' : null,
+          selectedService ? `Layanan dipilih: **${selectedService.emoji} ${selectedService.label}**` : null,
           '',
           type === 'order'
-            ? '**Form order:**\nProduk:\nJumlah:\nUsername Roblox:\nMetode pembayaran:\nCatatan:'
+            ? [
+              '**Form order:**',
+              `Layanan: ${selectedService ? `${selectedService.emoji} ${selectedService.label}` : '-'}`,
+              'Produk:',
+              'Jumlah:',
+              'Username Roblox:',
+              selectedService?.service === 'via-login' ? 'USN + Password:' : null,
+              'Metode pembayaran:',
+              'Catatan:'
+            ].filter(Boolean).join('\n')
             : type === 'rekber'
               ? '**Form rekber:**\nBuyer/Seller:\nBarang transaksi:\nNominal:\nPihak lawan:\nBukti kesepakatan:'
               : '**Form support:**\nMasalah:\nOrder ID jika ada:\nBukti screenshot:\nPenjelasan:',
@@ -1081,7 +1170,15 @@ async function createTicketForMember(interaction, type, openerMember, options = 
   return { channelId: channel.id };
 }
 
-async function createTicket(interaction, type) {
+async function createTicket(interaction, type, service = null) {
+  if (type === 'order' && service && !orderTicketService(service)) {
+    await interaction.reply({
+      content: 'Layanan order tidak dikenali. Silakan refresh panel ticket atau hubungi staff.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
   if (!memberIsStaff(interaction.member) && !memberIsVerified(interaction.member)) {
     await interaction.reply({
       content: 'Kamu harus verify terlebih dahulu sebelum membuka ticket.',
@@ -1091,10 +1188,11 @@ async function createTicket(interaction, type) {
   }
 
   const isAlwaysOpenRekber = type === 'rekber';
+  const availabilityKey = type === 'order' && service ? service : type;
 
-  if (!isAlwaysOpenRekber && !ticketServiceIsAvailable(interaction.guildId, type)) {
+  if (!isAlwaysOpenRekber && !ticketServiceIsAvailable(interaction.guildId, availabilityKey)) {
     await interaction.reply({
-      content: serviceStatusIsSet(interaction.guildId, type)
+      content: serviceStatusIsSet(interaction.guildId, availabilityKey)
         ? `${ticketTypeLabel(type)} sedang closed. Silakan cek status server atau tunggu admin membuka kembali.`
         : `Store sedang closed. ${operatingStatusText()}`,
       flags: MessageFlags.Ephemeral
@@ -1103,7 +1201,7 @@ async function createTicket(interaction, type) {
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const result = await createTicketForMember(interaction, type, interaction.member);
+  const result = await createTicketForMember(interaction, type, interaction.member, { service });
   if (result.existingChannelId) {
     await interaction.editReply(`Kamu masih punya ticket aktif: <#${result.existingChannelId}>`);
     return;
@@ -1123,7 +1221,17 @@ async function openTicketForUser(interaction) {
 
   const targetUser = interaction.options.getUser('user', true);
   const type = interaction.options.getString('type', true);
+  const service = type === 'order' ? interaction.options.getString('service') : null;
+  const selectedService = type === 'order' ? orderTicketService(service) : null;
   const openerMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+
+  if (type === 'order' && service && !selectedService) {
+    await interaction.reply({
+      content: 'Layanan order tidak dikenali. Pilih service yang tersedia di command.',
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
 
   if (!openerMember) {
     await interaction.reply({
@@ -1136,7 +1244,8 @@ async function openTicketForUser(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const result = await createTicketForMember(interaction, type, openerMember, {
     bypassStoreHours: true,
-    openedByStaff: true
+    openedByStaff: true,
+    service
   });
 
   if (result.existingChannelId) {
@@ -1144,7 +1253,8 @@ async function openTicketForUser(interaction) {
     return;
   }
 
-  await interaction.editReply(`Ticket ${ticketTypeLabel(type)} untuk <@${targetUser.id}> berhasil dibuat: <#${result.channelId}>`);
+  const serviceLabel = selectedService ? ` (${selectedService.label})` : '';
+  await interaction.editReply(`Ticket ${ticketTypeLabel(type)}${serviceLabel} untuk <@${targetUser.id}> berhasil dibuat: <#${result.channelId}>`);
 }
 
 async function claimTicket(interaction) {
@@ -1769,7 +1879,10 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isButton()) {
       if (interaction.customId === 'verify:member') await handleVerify(interaction);
-      if (interaction.customId.startsWith('ticket:create:')) await createTicket(interaction, interaction.customId.split(':').at(-1));
+      if (interaction.customId.startsWith('ticket:create:')) {
+        const [, , type, service] = interaction.customId.split(':');
+        await createTicket(interaction, type, service || null);
+      }
       if (interaction.customId === 'ticket:claim') await claimTicket(interaction);
       if (interaction.customId === 'ticket:payment') await interaction.reply(qrisReplyPayload({ ephemeral: false }));
       if (interaction.customId === 'payment:qris') await interaction.reply(qrisReplyPayload({ ephemeral: true }));

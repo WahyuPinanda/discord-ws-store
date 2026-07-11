@@ -65,10 +65,10 @@ const TUMBAL_TRADE_LINKS = [
   'https://www.roblox.com/catalog/110706992/GGE'
 ];
 
-function buyRobuxRow() {
+function buyRobuxRow(service) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('ticket:create:order')
+      .setCustomId(`ticket:create:order:${service}`)
       .setLabel('Buy Robux')
       .setEmoji('🪙')
       .setStyle(ButtonStyle.Success)
@@ -122,7 +122,7 @@ export function itemTumbalTradePayload(embedBase, override = {}) {
     components: [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('ticket:create:order')
+          .setCustomId('ticket:create:order:limited')
           .setLabel('Beli Item Tumbal')
           .setEmoji('🎟️')
           .setStyle(ButtonStyle.Success)
@@ -140,7 +140,7 @@ export function viaLoginPricePayload(embedBase, override = {}) {
         .setTitle(override.title || '💜 PRICE LIST VIA LOGIN (INSTANT)')
         .setDescription(override.description || DEFAULT_VIA_LOGIN_DESCRIPTION)
     ],
-    components: [buyRobuxRow()]
+    components: [buyRobuxRow('via-login')]
   };
 
   return attachBanner(payload, VIA_LOGIN_IMAGE_PATH, 'ws-store-via-login.png');
@@ -153,7 +153,7 @@ export function viaUsernamePricePayload(embedBase, override = {}) {
         .setTitle(override.title || '💎 PRICE LIST VIA SEND USERNAME')
         .setDescription(override.description || DEFAULT_VIA_USERNAME_DESCRIPTION)
     ],
-    components: [buyRobuxRow()]
+    components: [buyRobuxRow('via-username')]
   };
 
   return attachBanner(payload, VIA_USERNAME_IMAGE_PATH, 'ws-store-via-username.png');

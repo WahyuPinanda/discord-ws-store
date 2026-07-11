@@ -37,11 +37,13 @@ export function howToOrderPanelPayload(embedBase) {
       embedBase()
         .setTitle('📌 CARA PEMESANAN')
         .setDescription([
-          '1. Cek pricelist dan stock sesuai produk yang kamu butuhkan.',
-          '2. Buka ticket order.',
-          '3. Isi detail pesanan dan tunggu admin claim ticket.',
-          '4. Klik tombol payment untuk QRIS, lalu kirim bukti pembayaran.',
-          '5. Setelah order selesai, invoice akan dikirim ke DM dan transaksi masuk ke channel vouch/transaction.'
+          '1. Cek pricelist, stock, dan status layanan di server stats.',
+          '2. Masuk ke channel ticket order.',
+          '3. Pilih tombol layanan sesuai kebutuhan: Gamepass & GIG, Payout Instant, VILOG, Robux Via Username, atau Limited Item.',
+          '4. Isi form order di ticket sesuai layanan yang dipilih.',
+          '5. Tunggu admin claim ticket dan ikuti arahan pembayaran.',
+          '6. Klik tombol payment untuk QRIS, lalu kirim bukti pembayaran.',
+          '7. Setelah order selesai, invoice dikirim ke DM dan transaksi masuk ke channel vouch/transaction.'
         ].join('\n'))
     ]
   };
