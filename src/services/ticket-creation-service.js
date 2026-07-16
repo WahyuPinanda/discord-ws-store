@@ -18,7 +18,13 @@ export function createTicketCreationFeature({
   }
 
   async function createTicketForMemberUnlocked(interaction, type, openerMember, options) {
-    const { bypassStoreHours = false, openedByStaff = false, service = null } = options;
+    const {
+      additionalMembers = [],
+      bypassStoreHours = false,
+      openedByStaff = false,
+      rekberDetails = null,
+      service = null
+    } = options;
     const openerUser = openerMember.user;
     const selectedService = type === 'order' ? orderTicketService(service) : null;
 
@@ -55,17 +61,21 @@ export function createTicketCreationFeature({
       if (!activeCategory) {
         throw new Error(`Ticket category not found: ${activeTicketCategoryName}`);
       }
+      const participantMembers = [...new Map(
+        [openerMember, ...additionalMembers].map((member) => [member.id, member])
+      ).values()];
+      const participantIds = participantMembers.map((member) => member.id);
       const overwrites = [
         { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        {
-          id: openerMember.id,
+        ...participantMembers.map((member) => ({
+          id: member.id,
           allow: [
             PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.SendMessages,
             PermissionsBitField.Flags.ReadMessageHistory,
             PermissionsBitField.Flags.AttachFiles
           ]
-        }
+        }))
       ];
 
       for (const roleName of staffRoleNames()) {
@@ -98,7 +108,8 @@ export function createTicketCreationFeature({
       if (channelUpdateError) throw channelUpdateError;
 
       await channel.send({
-        content: `<@${openerUser.id}>`,
+        content: participantIds.map((id) => `<@${id}>`).join(' '),
+        allowedMentions: { users: participantIds },
         embeds: [
           embedBase()
             .setTitle('🎟️ Ticket Created')
@@ -120,7 +131,16 @@ export function createTicketCreationFeature({
                   'Catatan:'
                 ].filter(Boolean).join('\n')
                 : type === 'rekber'
-                  ? '**Form rekber:**\nBuyer/Seller:\nBarang transaksi:\nNominal:\nPihak lawan:\nBukti kesepakatan:'
+                  ? rekberDetails
+                    ? [
+                      '**Data rekber:**',
+                      `Pembeli: <@${rekberDetails.buyerId}> (\`${rekberDetails.buyerUsername}\`)`,
+                      `Penjual: <@${rekberDetails.sellerId}> (\`${rekberDetails.sellerUsername}\`)`,
+                      `Jumlah transaksi: **${rekberDetails.transactionAmount}**`,
+                      'Barang transaksi:',
+                      'Bukti kesepakatan:'
+                    ].join('\n')
+                    : '**Form rekber:**\nBuyer/Seller:\nBarang transaksi:\nNominal:\nPihak lawan:\nBukti kesepakatan:'
                   : '**Form support:**\nMasalah:\nOrder ID jika ada:\nBukti screenshot:\nPenjelasan:',
               '',
               'Silakan isi form di atas dan tunggu admin menerima ticket.'

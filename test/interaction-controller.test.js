@@ -18,6 +18,7 @@ function createController(overrides = {}) {
     handleServiceStatusCommand: record('handleServiceStatusCommand'),
     handleGiveawayCommand: record('handleGiveawayCommand'),
     handleVerify: record('handleVerify'),
+    createRekberTicket: record('createRekberTicket'),
     createTicket: record('createTicket'),
     claimTicket: record('claimTicket'),
     qrisReplyPayload: (options) => ({ options }),
@@ -103,6 +104,20 @@ test('routes ticket completion modal submissions', async () => {
   await handleInteraction(interaction);
 
   assert.deepEqual(calls[0], ['completeTicket', interaction]);
+});
+
+test('routes rekber modal submissions', async () => {
+  const { calls, handleInteraction } = createController();
+  const interaction = {
+    customId: 'ticket:rekber-modal',
+    isChatInputCommand: () => false,
+    isButton: () => false,
+    isModalSubmit: () => true
+  };
+
+  await handleInteraction(interaction);
+
+  assert.deepEqual(calls[0], ['createRekberTicket', interaction]);
 });
 
 test('interaction error middleware sends a safe ephemeral response', async () => {

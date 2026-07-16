@@ -60,6 +60,70 @@ test('verification fails closed when the verified role is missing', async () => 
   assert.match(interaction.replyPayload.content, /Role verifikasi belum tersedia/);
 });
 
+test('rekber button opens the buyer and seller form with the requested example', async () => {
+  const { calls, controller } = createTicketControllerContext({ memberIsVerified: () => true });
+  const interaction = {
+    member: {},
+    async showModal(modal) {
+      this.modal = modal;
+    }
+  };
+
+  await controller.createTicket(interaction, 'rekber');
+
+  assert.equal(interaction.modal.data.custom_id, 'ticket:rekber-modal');
+  assert.equal(interaction.modal.data.title, 'Form Ticket Rekber');
+  const inputs = interaction.modal.components.map((row) => row.components[0].data);
+  assert.equal(inputs[0].label, 'Username Discord Pembeli (Cth: keii123)');
+  assert.equal(inputs[1].label, 'Username Discord Penjual (Cth: keii123)');
+  assert.equal(inputs[0].placeholder, 'keii123');
+  assert.equal(inputs[1].placeholder, 'keii123');
+  assert.equal(inputs[2].label, 'Jumlah Transaksi (Rp / Robux)');
+  assert.equal(calls.length, 0);
+});
+
+test('rekber form creates a ticket and includes both transaction members', async () => {
+  const buyer = { id: 'buyer-1', user: { id: 'buyer-1', username: 'keii123' } };
+  const seller = { id: 'seller-1', user: { id: 'seller-1', username: 'seller123' } };
+  const members = [buyer, seller];
+  const { calls, controller } = createTicketControllerContext({ memberIsVerified: () => true });
+  const values = {
+    'rekber:buyer': 'keii123',
+    'rekber:seller': 'seller123',
+    'rekber:amount': 'Rp150.000'
+  };
+  const interaction = {
+    guildId: 'guild-1',
+    user: buyer.user,
+    member: buyer,
+    guild: {
+      members: {
+        cache: { find: (callback) => members.find(callback) || null }
+      }
+    },
+    fields: { getTextInputValue: (id) => values[id] },
+    async deferReply() {},
+    async editReply(payload) {
+      this.editPayload = payload;
+    }
+  };
+
+  await controller.createRekberTicket(interaction);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1], 'rekber');
+  assert.equal(calls[0][2], buyer);
+  assert.deepEqual(calls[0][3].additionalMembers, [buyer, seller]);
+  assert.deepEqual(calls[0][3].rekberDetails, {
+    buyerId: 'buyer-1',
+    buyerUsername: 'keii123',
+    sellerId: 'seller-1',
+    sellerUsername: 'seller123',
+    transactionAmount: 'Rp150.000'
+  });
+  assert.match(interaction.editPayload, /Pembeli dan penjual sudah ditambahkan/);
+});
+
 test('staff open-ticket bypasses store hours for the selected member', async () => {
   const targetUser = { id: 'buyer-1' };
   const openerMember = { id: 'buyer-1', user: targetUser };

@@ -280,6 +280,7 @@ const { createTicketForMember } = createTicketCreationFeature({
 
 const {
   claimTicket,
+  createRekberTicket,
   createTicket,
   handleVerify,
   openTicketForUser
@@ -394,6 +395,7 @@ const handleInteraction = withInteractionErrorHandling(createInteractionControll
   handleServiceStatusCommand,
   handleGiveawayCommand,
   handleVerify,
+  createRekberTicket,
   createTicket,
   claimTicket,
   qrisReplyPayload,

@@ -70,6 +70,8 @@ function createContext({ failSend = false } = {}) {
   const db = createTicketDbStub();
   let channelCreateCount = 0;
   let channelDeleteCount = 0;
+  let channelCreateOptions = null;
+  let sentPayload = null;
   const category = { id: 'active-category', type: ChannelType.GuildCategory, name: 'ACTIVE TICKETS' };
   const everyone = { id: 'everyone' };
   const staffRole = { id: 'staff', name: 'Admin' };
@@ -88,13 +90,15 @@ function createContext({ failSend = false } = {}) {
           return callback(category) ? category : null;
         }
       },
-      async create() {
+      async create(options) {
         channelCreateCount += 1;
+        channelCreateOptions = options;
         const id = `channel-${channelCreateCount}`;
         return {
           id,
-          async send() {
+          async send(payload) {
             if (failSend) throw new Error('send failed');
+            sentPayload = payload;
           },
           async delete() {
             channelDeleteCount += 1;
@@ -143,6 +147,12 @@ function createContext({ failSend = false } = {}) {
     },
     get channelDeleteCount() {
       return channelDeleteCount;
+    },
+    get channelCreateOptions() {
+      return channelCreateOptions;
+    },
+    get sentPayload() {
+      return sentPayload;
     }
   };
 }
@@ -176,4 +186,34 @@ test('failed channel initialization rolls back the ticket record', async () => {
 
   assert.equal(context.channelDeleteCount, 1);
   assert.equal(context.db.tickets[0].status, 'closed');
+});
+
+test('rekber ticket grants access and mentions both transaction parties', async () => {
+  const context = createContext();
+  const seller = {
+    id: 'seller-1',
+    user: { id: 'seller-1', username: 'seller123' }
+  };
+
+  await context.feature.createTicketForMember(
+    context.interaction,
+    'rekber',
+    context.openerMember,
+    {
+      additionalMembers: [context.openerMember, seller],
+      rekberDetails: {
+        buyerId: 'buyer-1',
+        buyerUsername: 'keii123',
+        sellerId: 'seller-1',
+        sellerUsername: 'seller123',
+        transactionAmount: 'Rp150.000'
+      }
+    }
+  );
+
+  const overwriteIds = context.channelCreateOptions.permissionOverwrites.map((item) => item.id);
+  assert.equal(overwriteIds.filter((id) => id === 'buyer-1').length, 1);
+  assert.equal(overwriteIds.filter((id) => id === 'seller-1').length, 1);
+  assert.equal(context.sentPayload.content, '<@buyer-1> <@seller-1>');
+  assert.deepEqual(context.sentPayload.allowedMentions, { users: ['buyer-1', 'seller-1'] });
 });

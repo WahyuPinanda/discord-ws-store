@@ -12,6 +12,7 @@ export function createInteractionController({
   handleServiceStatusCommand,
   handleGiveawayCommand,
   handleVerify,
+  createRekberTicket,
   createTicket,
   claimTicket,
   qrisReplyPayload,
@@ -95,8 +96,14 @@ export function createInteractionController({
       return;
     }
 
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket:complete-modal:')) {
-      await completeTicket(interaction);
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId === 'ticket:rekber-modal') {
+        await createRekberTicket(interaction);
+        return;
+      }
+      if (interaction.customId.startsWith('ticket:complete-modal:')) {
+        await completeTicket(interaction);
+      }
     }
   };
 }

@@ -1,4 +1,68 @@
-import { MessageFlags } from 'discord.js';
+import {
+  ActionRowBuilder,
+  MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
+} from 'discord.js';
+
+const REKBER_MODAL_ID = 'ticket:rekber-modal';
+
+function rekberModal() {
+  return new ModalBuilder()
+    .setCustomId(REKBER_MODAL_ID)
+    .setTitle('Form Ticket Rekber')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('rekber:buyer')
+          .setLabel('Username Discord Pembeli (Cth: keii123)')
+          .setPlaceholder('keii123')
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(2)
+          .setMaxLength(32)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('rekber:seller')
+          .setLabel('Username Discord Penjual (Cth: keii123)')
+          .setPlaceholder('keii123')
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(2)
+          .setMaxLength(32)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('rekber:amount')
+          .setLabel('Jumlah Transaksi (Rp / Robux)')
+          .setPlaceholder('Contoh: Rp150.000 atau 1.000 Robux')
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(1)
+          .setMaxLength(100)
+          .setRequired(true)
+      )
+    );
+}
+
+function usernameKey(value) {
+  return value.trim().replace(/^@/, '').toLowerCase();
+}
+
+async function findGuildMemberByUsername(guild, value) {
+  const rawValue = value.trim();
+  const idMatch = rawValue.match(/^(?:<@!?)?(\d{17,20})>?$/);
+  if (idMatch) return guild.members.fetch(idMatch[1]).catch(() => null);
+
+  const username = usernameKey(rawValue);
+  const exactMatch = (member) => member.user.username.toLowerCase() === username;
+  const cachedMember = guild.members.cache.find(exactMatch);
+  if (cachedMember) return cachedMember;
+
+  const fetchedMembers = await guild.members.fetch({ query: rawValue.replace(/^@/, ''), limit: 100 });
+  return fetchedMembers.find(exactMatch) || null;
+}
 
 export function createTicketController({
   config,
@@ -54,6 +118,11 @@ export function createTicketController({
       return;
     }
 
+    if (type === 'rekber') {
+      await interaction.showModal(rekberModal());
+      return;
+    }
+
     const availabilityKey = type === 'order' && service ? service : type;
     const isAvailable = type === 'order' && service
       ? orderTicketServiceIsAvailable(interaction.guildId, service)
@@ -84,6 +153,69 @@ export function createTicketController({
       return;
     }
     await interaction.editReply(`Ticket berhasil dibuat: <#${result.channelId}>`);
+  }
+
+  async function createRekberTicket(interaction) {
+    if (!memberIsStaff(interaction.member) && !memberIsVerified(interaction.member)) {
+      await interaction.reply({
+        content: 'Kamu harus verify terlebih dahulu sebelum membuka ticket.',
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
+    const buyerInput = interaction.fields.getTextInputValue('rekber:buyer');
+    const sellerInput = interaction.fields.getTextInputValue('rekber:seller');
+    const transactionAmount = interaction.fields.getTextInputValue('rekber:amount').trim();
+
+    if (!usernameKey(buyerInput) || !usernameKey(sellerInput) || !transactionAmount) {
+      await interaction.reply({
+        content: 'Semua data Rekber wajib diisi dengan benar.',
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const [buyerMember, sellerMember] = await Promise.all([
+      findGuildMemberByUsername(interaction.guild, buyerInput),
+      findGuildMemberByUsername(interaction.guild, sellerInput)
+    ]);
+    const missingUsernames = [
+      buyerMember ? null : `pembeli \`${buyerInput.trim()}\``,
+      sellerMember ? null : `penjual \`${sellerInput.trim()}\``
+    ].filter(Boolean);
+
+    if (missingUsernames.length) {
+      await interaction.editReply(`Member ${missingUsernames.join(' dan ')} tidak ditemukan di server. Pastikan memakai username Discord, bukan display name.`);
+      return;
+    }
+    if (buyerMember.id === sellerMember.id) {
+      await interaction.editReply('Username pembeli dan penjual harus berbeda.');
+      return;
+    }
+    if (!memberIsStaff(interaction.member) && ![buyerMember.id, sellerMember.id].includes(interaction.user.id)) {
+      await interaction.editReply('Kamu harus menjadi pembeli atau penjual dalam transaksi ini.');
+      return;
+    }
+
+    const result = await createTicketForMember(interaction, 'rekber', interaction.member, {
+      additionalMembers: [buyerMember, sellerMember],
+      rekberDetails: {
+        buyerId: buyerMember.id,
+        buyerUsername: buyerMember.user.username,
+        sellerId: sellerMember.id,
+        sellerUsername: sellerMember.user.username,
+        transactionAmount
+      }
+    });
+    if (result.existingChannelId) {
+      await interaction.editReply(`Kamu masih punya ticket Rekber aktif: <#${result.existingChannelId}>`);
+      return;
+    }
+
+    await interaction.editReply(`Ticket Rekber berhasil dibuat: <#${result.channelId}>. Pembeli dan penjual sudah ditambahkan.`);
   }
 
   async function openTicketForUser(interaction) {
@@ -162,5 +294,5 @@ export function createTicketController({
     });
   }
 
-  return { claimTicket, createTicket, handleVerify, openTicketForUser };
+  return { claimTicket, createRekberTicket, createTicket, handleVerify, openTicketForUser };
 }
