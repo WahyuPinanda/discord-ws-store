@@ -331,7 +331,7 @@ export function createServerManagementService({
     const ticketRekberChannel = await ensureTextChannel(guild, CHANNEL.ticketRekber, ticketCategory, publicReadOnly);
     const ticketSupportChannel = await ensureTextChannel(guild, CHANNEL.ticketSupport, ticketCategory, publicReadOnly);
 
-    for (const name of ['💬・chat', '🏷️・check-payout', '💎・check-tumbal-limited', '❌・report-scammer', '💬・chit-chat', '🧾・vouches']) {
+    for (const name of ['💬・chat', '🏷️・check-payout', '❌・report-scammer', '🧾・vouches', CHANNEL.socialMedia]) {
       await ensureTextChannel(guild, name, loungeCategory, publicChat);
     }
     await ensureTextChannel(guild, CHANNEL.giveaways, loungeCategory, publicReadOnly);

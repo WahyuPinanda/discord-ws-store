@@ -131,7 +131,6 @@ export const CATEGORY = {
   ticket: '🎟️ ORDER / BERTANYA DISINI',
   activeTicket: '🎫 ACTIVE TICKETS',
   lounge: '💬 LOUNGE',
-  community: '🎉 COMMUNITY',
   transaction: '📂 TRANSACTION',
   admin: '🔐 ADMIN AREA'
 };
@@ -147,6 +146,7 @@ export const CHANNEL = {
   ticketSupport: '🛠️・ticket-support',
   valueUpdate: '🔎・value-update-realtime',
   robuxViaUsername: '💎・robux-via-username',
+  socialMedia: '📱・social-media',
   giveaways: '🎉・giveaways',
   successTransaction: '✅・success-transaction',
   ticketTranscript: '📜・ticket-transcript',
