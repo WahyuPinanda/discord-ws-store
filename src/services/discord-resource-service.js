@@ -81,9 +81,14 @@ export async function ensureBotDisplayRole(guild, name, ownerRole, options = {})
     await botMember.roles.add(displayRole);
   }
 
-  const targetPosition = botManagedRole.position - 1;
-  if (displayRole.position !== targetPosition) {
-    await displayRole.setPosition(targetPosition);
+  const isCorrectlyPositioned = displayRole.position > ownerRole.position
+    && displayRole.position < botManagedRole.position;
+  if (!isCorrectlyPositioned) {
+    try {
+      await displayRole.setPosition(ownerRole.position);
+    } catch (error) {
+      throw new Error(`Failed to position ${name} above ${ownerRole.name}: ${error.message}`, { cause: error });
+    }
   }
 
   return displayRole;
@@ -96,7 +101,11 @@ export async function ensureRoleStackAbove(anchorRole, orderedRoles) {
   if (alreadyOrdered) return orderedRoles;
 
   for (const role of orderedRoles) {
-    await role.setPosition(anchorRole.position + 1);
+    try {
+      await role.setPosition(anchorRole.position);
+    } catch (error) {
+      throw new Error(`Failed to position ${role.name} above ${anchorRole.name}: ${error.message}`, { cause: error });
+    }
   }
   return orderedRoles;
 }

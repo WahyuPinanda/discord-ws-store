@@ -214,6 +214,7 @@ export function createServerManagementService({
     }
 
     const guild = interaction.guild;
+    const roleLayoutWarnings = [];
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await interaction.editReply('Setup server sedang diproses. Bot sedang merapikan role, permission, channel, dan panel...');
 
@@ -244,8 +245,18 @@ export function createServerManagementService({
         aliases: tier.aliases
       }));
     }
-    await ensureRoleStackAbove(customerRole, tierRoles);
-    await ensureBotDisplayRole(guild, ROLE.botDisplay, ownerRole, { color: 0x00d2ff });
+    try {
+      await ensureRoleStackAbove(customerRole, tierRoles);
+    } catch (error) {
+      logger.warn('Customer tier role ordering failed:', error.message);
+      roleLayoutWarnings.push('urutan role customer tier');
+    }
+    try {
+      await ensureBotDisplayRole(guild, ROLE.botDisplay, ownerRole, { color: 0x00d2ff });
+    } catch (error) {
+      logger.warn('Bot display role ordering failed:', error.message);
+      roleLayoutWarnings.push(`posisi role ${ROLE.botDisplay}`);
+    }
 
     const everyone = guild.roles.everyone;
     const staffAllow = [
@@ -394,7 +405,10 @@ export function createServerManagementService({
       await publishOrEditPanel(channel, type, managedPanelPayload(guild.id, type));
     }
 
-    await interaction.editReply('Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, welcome invite tracker, dan admin transcript sudah dibuat.');
+    const warning = roleLayoutWarnings.length
+      ? `\n\nPeringatan: Discord menolak ${roleLayoutWarnings.join(' dan ')}. Pastikan role bot memiliki Manage Roles dan berada di atas semua role tersebut.`
+      : '';
+    await interaction.editReply(`Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, welcome invite tracker, dan admin transcript sudah dibuat.${warning}`);
   }
 
   return {

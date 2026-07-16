@@ -126,7 +126,7 @@ test('ensureBotDisplayRole hoists the bot below its managed role and above owner
 
   assert.equal(result, displayRole);
   assert.equal(displayRole.hoist, true);
-  assert.equal(displayRole.position, 9);
+  assert.equal(displayRole.position, 7);
   assert.equal(assignedRoleIds.has(displayRole.id), true);
 });
 
@@ -143,12 +143,9 @@ test('ensureRoleStackAbove orders tier roles above the customer anchor', async (
       return positions.get(id);
     },
     async setPosition(position) {
-      for (const [otherId, otherPosition] of positions) {
-        if (otherId !== id && otherPosition >= position) {
-          positions.set(otherId, otherPosition + 1);
-        }
-      }
-      positions.set(id, position);
+      const targetPosition = position;
+      anchorRole.position -= 1;
+      positions.set(id, targetPosition);
       return this;
     }
   }));
