@@ -155,6 +155,62 @@ test('staff open-ticket bypasses store hours for the selected member', async () 
   assert.match(interaction.editPayload, /berhasil dibuat/);
 });
 
+test('claiming a ticket records the event after the database update', async () => {
+  const ticket = { id: 42, opener_id: 'buyer-1', type: 'order' };
+  const events = [];
+  const selectBuilder = {
+    eq() {
+      return this;
+    },
+    async maybeSingle() {
+      return { data: ticket, error: null };
+    }
+  };
+  const supabase = {
+    from() {
+      return {
+        select: () => selectBuilder,
+        update: () => ({
+          async eq() {
+            return { data: null, error: null };
+          }
+        })
+      };
+    }
+  };
+  const { controller } = createTicketControllerContext({
+    supabase,
+    memberIsStaff: () => true,
+    findVerifiedRole: () => ({}),
+    unwrapSupabase: (result) => {
+      if (result.error) throw result.error;
+      return result.data;
+    },
+    embedBase: () => ({
+      setColor() { return this; },
+      setTitle() { return this; },
+      setDescription() { return this; },
+      addFields() { return this; }
+    }),
+    logTicketEvent: async (...args) => events.push(args)
+  });
+  const interaction = {
+    member: {},
+    guild: { id: 'guild-1' },
+    channelId: 'ticket-channel',
+    user: { id: 'staff-1' },
+    async reply(payload) {
+      this.replyPayload = payload;
+    }
+  };
+
+  await controller.claimTicket(interaction);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0][1].event, 'Ticket Claimed');
+  assert.equal(events[0][1].ticketId, 42);
+});
+
 test('admin controller updates order status and schedules a UI refresh', async () => {
   const calls = [];
   const controller = createAdminController({
@@ -164,7 +220,8 @@ test('admin controller updates order status and schedules a UI refresh', async (
     isPanelTextOverrideSchemaMissing: () => false,
     refreshGuildUiInBackground: (...args) => calls.push(['refresh', ...args]),
     updateServiceStatus: async (...args) => calls.push(['update', ...args]),
-    serviceDefinitions: { order: { statsLabel: 'Order' } }
+    serviceDefinitions: { order: { statsLabel: 'Order' } },
+    logAdminAction: async (...args) => calls.push(['log', ...args])
   });
   const interaction = {
     member: {},
@@ -181,5 +238,7 @@ test('admin controller updates order status and schedules a UI refresh', async (
 
   assert.deepEqual(calls[0], ['update', interaction.guild, 'order', true, 'staff-1']);
   assert.deepEqual(calls[1], ['refresh', interaction.guild, 'Service status']);
+  assert.equal(calls[2][0], 'log');
+  assert.equal(calls[2][2].action, 'Update Service Status');
   assert.match(interaction.editPayload, /OPEN/);
 });

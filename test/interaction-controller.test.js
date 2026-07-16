@@ -26,6 +26,7 @@ function createController(overrides = {}) {
     closeTicket: record('closeTicket'),
     handleGiveawayJoin: record('handleGiveawayJoin'),
     completeTicket: record('completeTicket'),
+    logAdminAction: record('logAdminAction'),
     ...overrides
   };
 
@@ -40,6 +41,7 @@ function chatInteraction(commandName) {
     commandName,
     member: {},
     guild: { id: 'guild-1' },
+    user: { id: 'staff-1' },
     isChatInputCommand: () => true,
     isButton: () => false,
     isModalSubmit: () => false,
@@ -90,6 +92,17 @@ test('rejects refresh-panels for non-staff before scheduling work', async () => 
 
   assert.match(interaction.replyPayload.content, /Hanya staff/);
   assert.equal(calls.length, 0);
+});
+
+test('refresh-panels records the successful admin action', async () => {
+  const { calls, handleInteraction } = createController();
+  const interaction = chatInteraction('refresh-panels');
+
+  await handleInteraction(interaction);
+
+  assert.deepEqual(calls[0], ['refreshPanelsInBackground', interaction.guild, 'Manual panel']);
+  assert.equal(calls[1][0], 'logAdminAction');
+  assert.equal(calls[1][2].action, 'Refresh Panels');
 });
 
 test('routes ticket completion modal submissions', async () => {

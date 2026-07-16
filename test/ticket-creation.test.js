@@ -72,6 +72,7 @@ function createContext({ failSend = false } = {}) {
   let channelDeleteCount = 0;
   let channelCreateOptions = null;
   let sentPayload = null;
+  const ticketEvents = [];
   const category = { id: 'active-category', type: ChannelType.GuildCategory, name: 'ACTIVE TICKETS' };
   const everyone = { id: 'everyone' };
   const staffRole = { id: 'staff', name: 'Admin' };
@@ -134,7 +135,8 @@ function createContext({ failSend = false } = {}) {
       setDescription() {
         return this;
       }
-    })
+    }),
+    logTicketEvent: async (...args) => ticketEvents.push(args)
   });
 
   return {
@@ -153,6 +155,9 @@ function createContext({ failSend = false } = {}) {
     },
     get sentPayload() {
       return sentPayload;
+    },
+    get ticketEvents() {
+      return ticketEvents;
     }
   };
 }
@@ -169,6 +174,8 @@ test('concurrent ticket requests create only one ticket and one channel', async 
   assert.equal(context.channelCreateCount, 1);
   assert.equal(first.channelId, 'channel-1');
   assert.equal(second.existingChannelId, 'channel-1');
+  assert.equal(context.ticketEvents.length, 1);
+  assert.equal(context.ticketEvents[0][1].event, 'Ticket Created');
 });
 
 test('failed channel initialization rolls back the ticket record', async () => {

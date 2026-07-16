@@ -24,6 +24,7 @@ import { unwrapSupabase } from './libs/supabase-result.js';
 import { withInteractionErrorHandling } from './middlewares/interaction-error-handler.js';
 import { registerDiscordEventRoutes } from './routes/discord-event-routes.js';
 import { createAntiSpamFeature } from './services/anti-spam-service.js';
+import { createAuditLogService } from './services/audit-log-service.js';
 import { channelMatchesName } from './services/discord-resource-service.js';
 import { createGiveawayFeature } from './services/giveaway-service.js';
 import { howToOrderPanelPayload, rulesPanelPayload } from './services/info-panel-service.js';
@@ -116,6 +117,22 @@ const {
 });
 
 const {
+  logAdminAction,
+  logModerationEvent,
+  logOrderEvent,
+  logTicketEvent
+} = createAuditLogService({
+  channelMatchesName,
+  embedBase,
+  channelNames: {
+    admin: CHANNEL.adminLog,
+    ticket: CHANNEL.ticketLog,
+    order: CHANNEL.orderLog,
+    moderation: CHANNEL.modLog
+  }
+});
+
+const {
   checkStoreStatusAnnouncement,
   refreshServerStats,
   setupServer
@@ -128,7 +145,8 @@ const {
   loadServiceStatuses,
   loadPanelTextOverrides,
   publishOrEditPanel,
-  managedPanelPayload
+  managedPanelPayload,
+  logAdminAction
 });
 
 const {
@@ -275,7 +293,8 @@ const { createTicketForMember } = createTicketCreationFeature({
   ticketTypeLabel,
   ticketControlRows,
   embedBase,
-  unwrapSupabase
+  unwrapSupabase,
+  logTicketEvent
 });
 
 const {
@@ -299,7 +318,8 @@ const {
   serviceStatusIsSet,
   ticketTypeLabel,
   operatingStatusText,
-  createTicketForMember
+  createTicketForMember,
+  logTicketEvent
 });
 
 function qrisReplyPayload({ ephemeral = false } = {}) {
@@ -337,7 +357,9 @@ const {
   formatRupiah,
   channelMatchesName,
   memberIsStaff,
-  unwrapSupabase
+  unwrapSupabase,
+  logOrderEvent,
+  logTicketEvent
 });
 
 const {
@@ -351,7 +373,8 @@ const {
   isPanelTextOverrideSchemaMissing,
   refreshGuildUiInBackground,
   updateServiceStatus,
-  serviceDefinitions: SERVICE_DEFINITIONS
+  serviceDefinitions: SERVICE_DEFINITIONS,
+  logAdminAction
 });
 
 const {
@@ -369,7 +392,8 @@ const {
 
 const { handleMessageCreate } = createAntiSpamFeature({
   settings: SPAM_SETTINGS,
-  memberIsStaff
+  memberIsStaff,
+  logModerationEvent
 });
 
 const {
@@ -403,7 +427,8 @@ const handleInteraction = withInteractionErrorHandling(createInteractionControll
   showCompleteModal,
   closeTicket,
   handleGiveawayJoin,
-  completeTicket
+  completeTicket,
+  logAdminAction
 }));
 
 registerDiscordEventRoutes({

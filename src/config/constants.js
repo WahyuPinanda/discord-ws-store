@@ -152,5 +152,7 @@ export const CHANNEL = {
   successTransaction: '✅・success-transaction',
   ticketTranscript: '📜・ticket-transcript',
   adminLog: '📋・admin-log',
-  ticketLog: '🎫・ticket-log'
+  ticketLog: '🎫・ticket-log',
+  orderLog: '💰・order-log',
+  modLog: '🚨・mod-log'
 };

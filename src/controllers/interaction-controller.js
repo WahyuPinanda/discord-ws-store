@@ -19,7 +19,8 @@ export function createInteractionController({
   showCompleteModal,
   closeTicket,
   handleGiveawayJoin,
-  completeTicket
+  completeTicket,
+  logAdminAction = async () => false
 }) {
   async function handleChatCommand(interaction) {
     const handlers = {
@@ -48,6 +49,11 @@ export function createInteractionController({
         flags: MessageFlags.Ephemeral
       });
       refreshPanelsInBackground(interaction.guild, 'Manual panel');
+      await logAdminAction(interaction.guild, {
+        action: 'Refresh Panels',
+        actorId: interaction.user.id,
+        description: 'Refresh seluruh panel dimulai di background.'
+      });
       return;
     }
 

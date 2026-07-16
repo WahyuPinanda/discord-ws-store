@@ -21,6 +21,8 @@ export function createTransactionService({
   channelMatchesName,
   memberIsStaff,
   unwrapSupabase,
+  logOrderEvent = async () => false,
+  logTicketEvent = async () => false,
   logger = console
 }) {
   const ticketCompletionLocks = new Set();
@@ -323,6 +325,29 @@ export function createTransactionService({
       .update({ status: 'completed', closed_at: new Date().toISOString() })
       .eq('id', ticket.id), 'Failed to finalize completed ticket');
 
+    await Promise.all([
+      logOrderEvent(interaction.guild, {
+        transactionId: transaction.id,
+        ticketId: ticket.id,
+        buyerId: ticket.opener_id,
+        handledBy: interaction.user.id,
+        product: transaction.product,
+        amount: formatRupiah(transaction.amount),
+        payment: transaction.payment_method,
+        totalSpent: formatRupiah(totalSpent),
+        tier: tier?.name || 'Customer',
+        source: 'Ticket'
+      }),
+      logTicketEvent(interaction.guild, {
+        event: 'Ticket Completed',
+        ticketId: ticket.id,
+        channelId: interaction.channelId,
+        openerId: ticket.opener_id,
+        actorId: interaction.user.id,
+        type: ticket.type
+      })
+    ]);
+
     await interaction.editReply('Order selesai, invoice DM terkirim jika DM pembeli terbuka, dan ticket akan ditutup.');
     await interaction.channel.send('Ticket akan ditutup dalam 8 detik.');
     setTimeout(() => interaction.channel.delete('Order completed by WS Store bot').catch(() => null), 8000);
@@ -366,6 +391,14 @@ export function createTransactionService({
 
     await closeTicketChannel(interaction.channel, ticket, interaction.user.id);
     await interaction.editReply('Ticket ditutup dan transcript dikirim.');
+    await logTicketEvent(interaction.guild, {
+      event: 'Ticket Closed',
+      ticketId: ticket.id,
+      channelId: interaction.channelId,
+      openerId: ticket.opener_id,
+      actorId: interaction.user.id,
+      type: ticket.type
+    });
   }
 
   async function addManualTransaction(interaction) {
@@ -401,6 +434,17 @@ export function createTransactionService({
     await postTransaction(interaction.guild, transaction, buyer.id, totalSpent, tier);
     await sendInvoiceDm({ user: buyer, transaction, totalSpent, tier });
     await interaction.editReply(`Transaksi manual berhasil. Total ${buyer.tag}: ${formatRupiah(totalSpent)} (${tier?.name || 'Customer'}).`);
+    await logOrderEvent(interaction.guild, {
+      transactionId: transaction.id,
+      buyerId: buyer.id,
+      handledBy: interaction.user.id,
+      product: transaction.product,
+      amount: formatRupiah(transaction.amount),
+      payment: transaction.payment_method,
+      totalSpent: formatRupiah(totalSpent),
+      tier: tier?.name || 'Customer',
+      source: 'Manual Command'
+    });
   }
 
   async function showCustomer(interaction) {

@@ -9,6 +9,7 @@ export function createTicketCreationFeature({
   ticketControlRows,
   embedBase,
   unwrapSupabase,
+  logTicketEvent = async () => false,
   logger = console
 }) {
   const creationLocks = new Map();
@@ -147,6 +148,20 @@ export function createTicketCreationFeature({
             ].filter(Boolean).join('\n'))
         ],
         components: ticketControlRows(type)
+      });
+
+      await logTicketEvent(interaction.guild, {
+        event: 'Ticket Created',
+        ticketId: ticket.id,
+        channelId: channel.id,
+        openerId: openerUser.id,
+        actorId: interaction.user.id,
+        type: ticketTypeLabel(type),
+        fields: [
+          selectedService ? { name: 'Service', value: selectedService.label, inline: true } : null,
+          { name: 'Opened by Staff', value: openedByStaff ? 'Yes' : 'No', inline: true },
+          { name: 'Participants', value: participantIds.map((id) => `<@${id}>`).join(', '), inline: false }
+        ].filter(Boolean)
       });
 
       return { channelId: channel.id };

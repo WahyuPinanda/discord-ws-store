@@ -33,11 +33,11 @@ function cleanupSpamState(settings, now = Date.now()) {
 }
 
 async function deleteRecentSpamMessages(message, settings) {
-  if (!message.channel?.messages?.fetch) return;
+  if (!message.channel?.messages?.fetch) return 0;
 
   const since = Date.now() - settings.cleanupWindowMs;
   const fetched = await message.channel.messages.fetch({ limit: 50 }).catch(() => null);
-  if (!fetched) return;
+  if (!fetched) return 0;
 
   const spamMessages = fetched.filter((item) =>
     item.author.id === message.author.id
@@ -45,16 +45,17 @@ async function deleteRecentSpamMessages(message, settings) {
     && item.deletable
   );
 
-  if (!spamMessages.size) return;
+  if (!spamMessages.size) return 0;
 
   if (message.channel.bulkDelete) {
     await message.channel.bulkDelete(spamMessages, true).catch(async () => {
       await Promise.all([...spamMessages.values()].map((item) => item.delete().catch(() => null)));
     });
-    return;
+    return spamMessages.size;
   }
 
   await Promise.all([...spamMessages.values()].map((item) => item.delete().catch(() => null)));
+  return spamMessages.size;
 }
 
 async function sendSpamNotice(message, description) {
@@ -67,21 +68,41 @@ async function sendSpamNotice(message, description) {
   }
 }
 
-async function timeoutForSpam(message, settings, reason) {
+async function timeoutForSpam(message, settings, reason, logModerationEvent) {
   const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
 
-  await deleteRecentSpamMessages(message, settings);
+  const deletedMessages = await deleteRecentSpamMessages(message, settings);
+  let outcome = 'Messages removed; timeout unavailable';
 
   if (member?.moderatable) {
-    await member.timeout(settings.timeoutMs, reason).catch(() => null);
-    await sendSpamNotice(message, `kamu terkena timeout 5 menit karena spam. Alasan: ${reason}`);
-    return;
+    try {
+      await member.timeout(settings.timeoutMs, reason);
+      const timeoutMinutes = Math.max(1, Math.ceil(settings.timeoutMs / 60_000));
+      outcome = `Timed out for ${timeoutMinutes} minute(s)`;
+      await sendSpamNotice(message, `kamu terkena timeout ${timeoutMinutes} menit karena spam. Alasan: ${reason}`);
+    } catch {
+      outcome = 'Messages removed; timeout failed';
+      await sendSpamNotice(message, 'spam terdeteksi dan pesan sudah dihapus, tetapi bot gagal memberi timeout.');
+    }
+  } else {
+    await sendSpamNotice(message, 'spam terdeteksi dan pesan sudah dihapus, tetapi bot tidak bisa memberi timeout pada role kamu.');
   }
 
-  await sendSpamNotice(message, 'spam terdeteksi dan pesan sudah dihapus, tetapi bot tidak bisa memberi timeout pada role kamu.');
+  await logModerationEvent(message.guild, {
+    action: 'Spam Timeout',
+    userId: message.author.id,
+    channelId: message.channelId || message.channel?.id,
+    reason,
+    deletedMessages,
+    outcome
+  });
 }
 
-export function createAntiSpamFeature({ settings, memberIsStaff }) {
+export function createAntiSpamFeature({
+  settings,
+  memberIsStaff,
+  logModerationEvent = async () => false
+}) {
   async function handleMessageCreate(message) {
     if (!message.guild || message.author.bot || !message.member) return;
     if (memberIsStaff(message.member)) return;
@@ -99,7 +120,7 @@ export function createAntiSpamFeature({ settings, memberIsStaff }) {
     if (rapidCount >= settings.rapidMaxMessages) {
       bucket.lastActionAt = now;
       bucket.timestamps = [];
-      await timeoutForSpam(message, settings, 'spam terlalu cepat');
+      await timeoutForSpam(message, settings, 'spam terlalu cepat', logModerationEvent);
       return;
     }
 
@@ -109,14 +130,22 @@ export function createAntiSpamFeature({ settings, memberIsStaff }) {
     bucket.timestamps = [];
 
     if (hasActiveWarning) {
-      await timeoutForSpam(message, settings, 'mengulang spam setelah peringatan');
+      await timeoutForSpam(message, settings, 'mengulang spam setelah peringatan', logModerationEvent);
       bucket.warnedAt = 0;
       return;
     }
 
     bucket.warnedAt = now;
-    await deleteRecentSpamMessages(message, settings);
+    const deletedMessages = await deleteRecentSpamMessages(message, settings);
     await sendSpamNotice(message, 'jangan spam. Ini peringatan pertama. Jika mengulang, kamu akan terkena timeout 5 menit.');
+    await logModerationEvent(message.guild, {
+      action: 'Spam Warning',
+      userId: message.author.id,
+      channelId: message.channelId || message.channel?.id,
+      reason: 'Batas pesan dalam waktu singkat terlampaui',
+      deletedMessages,
+      outcome: 'First warning issued'
+    });
   }
 
   return { handleMessageCreate };

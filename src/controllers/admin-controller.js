@@ -7,7 +7,8 @@ export function createAdminController({
   isPanelTextOverrideSchemaMissing,
   refreshGuildUiInBackground,
   updateServiceStatus,
-  serviceDefinitions
+  serviceDefinitions,
+  logAdminAction = async () => false
 }) {
   async function setPanelText(interaction) {
     if (!memberIsStaff(interaction.member)) {
@@ -48,6 +49,14 @@ export function createAdminController({
 
     await interaction.editReply('Teks panel berhasil diupdate. Panel sedang direfresh di background.');
     refreshGuildUiInBackground(interaction.guild, 'Panel text');
+    await logAdminAction(interaction.guild, {
+      action: 'Update Panel Text',
+      actorId: interaction.user.id,
+      fields: [
+        { name: 'Panel', value: type, inline: true },
+        { name: 'Updated', value: [title ? 'title' : null, description ? 'description' : null].filter(Boolean).join(', '), inline: true }
+      ]
+    });
   }
 
   async function resetPanelText(interaction) {
@@ -78,6 +87,11 @@ export function createAdminController({
 
     await interaction.editReply('Teks panel sudah dikembalikan ke default. Panel sedang direfresh di background.');
     refreshGuildUiInBackground(interaction.guild, 'Panel text');
+    await logAdminAction(interaction.guild, {
+      action: 'Reset Panel Text',
+      actorId: interaction.user.id,
+      fields: [{ name: 'Panel', value: type, inline: true }]
+    });
   }
 
   async function handleServiceStatusCommand(interaction, isOpen) {
@@ -95,12 +109,28 @@ export function createAdminController({
       await updateServiceStatus(interaction.guild, service, isOpen, interaction.user.id);
       await interaction.editReply(`Ticket Order sekarang ${isOpen ? 'OPEN 🟢' : 'CLOSED 🔴'}. Tombol layanan tetap mengikuti server stats masing-masing dan sedang diperbarui di background.`);
       refreshGuildUiInBackground(interaction.guild, 'Service status');
+      await logAdminAction(interaction.guild, {
+        action: 'Update Service Status',
+        actorId: interaction.user.id,
+        fields: [
+          { name: 'Service', value: 'Ticket Order', inline: true },
+          { name: 'Status', value: isOpen ? 'OPEN' : 'CLOSED', inline: true }
+        ]
+      });
       return;
     }
     if (service === 'rekber') {
       await updateServiceStatus(interaction.guild, service, true, interaction.user.id);
       await interaction.editReply('Ticket rekber dibuat selalu OPEN. Proses tetap dibantu selagi admin / middleman sedang online.');
       refreshGuildUiInBackground(interaction.guild, 'Service status');
+      await logAdminAction(interaction.guild, {
+        action: 'Update Service Status',
+        actorId: interaction.user.id,
+        fields: [
+          { name: 'Service', value: 'Ticket Rekber', inline: true },
+          { name: 'Status', value: 'OPEN (always available)', inline: true }
+        ]
+      });
       return;
     }
 
@@ -108,6 +138,14 @@ export function createAdminController({
     const label = serviceDefinitions[service].statsLabel;
     await interaction.editReply(`${label} sekarang ${isOpen ? 'OPEN 🟢' : 'CLOSED 🔴'}. Server stats dan tombol ticket sedang diperbarui di background.`);
     refreshGuildUiInBackground(interaction.guild, 'Service status');
+    await logAdminAction(interaction.guild, {
+      action: 'Update Service Status',
+      actorId: interaction.user.id,
+      fields: [
+        { name: 'Service', value: label, inline: true },
+        { name: 'Status', value: isOpen ? 'OPEN' : 'CLOSED', inline: true }
+      ]
+    });
   }
 
   return { handleServiceStatusCommand, resetPanelText, setPanelText };

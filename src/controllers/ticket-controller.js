@@ -79,7 +79,8 @@ export function createTicketController({
   serviceStatusIsSet,
   ticketTypeLabel,
   operatingStatusText,
-  createTicketForMember
+  createTicketForMember,
+  logTicketEvent = async () => false
 }) {
   async function handleVerify(interaction) {
     const member = interaction.member;
@@ -291,6 +292,14 @@ export function createTicketController({
             value: new Date().toLocaleString('id-ID', { timeZone: config.timezone })
           })
       ]
+    });
+    await logTicketEvent(interaction.guild, {
+      event: 'Ticket Claimed',
+      ticketId: ticket.id,
+      channelId: interaction.channelId,
+      openerId: ticket.opener_id,
+      actorId: interaction.user.id,
+      type: ticket.type
     });
   }
 

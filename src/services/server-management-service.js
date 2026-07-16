@@ -39,6 +39,7 @@ export function createServerManagementService({
   loadPanelTextOverrides,
   publishOrEditPanel,
   managedPanelPayload,
+  logAdminAction = async () => false,
   logger = console
 }) {
   let lastStoreOpenState = null;
@@ -386,8 +387,8 @@ export function createServerManagementService({
     await ensureTextChannel(guild, CHANNEL.adminLog, adminCategory);
     await ensureTextChannel(guild, CHANNEL.ticketLog, adminCategory);
     await ensureTextChannel(guild, CHANNEL.ticketTranscript, adminCategory, staffOnly);
-    await ensureTextChannel(guild, '💰・order-log', adminCategory);
-    await ensureTextChannel(guild, '🚨・mod-log', adminCategory);
+    await ensureTextChannel(guild, CHANNEL.orderLog, adminCategory);
+    await ensureTextChannel(guild, CHANNEL.modLog, adminCategory);
 
     const panels = [
       [verifyChannel, 'verify'],
@@ -408,7 +409,15 @@ export function createServerManagementService({
     const warning = roleLayoutWarnings.length
       ? `\n\nPeringatan: Discord menolak ${roleLayoutWarnings.join(' dan ')}. Pastikan role bot memiliki Manage Roles dan berada di atas semua role tersebut.`
       : '';
-    await interaction.editReply(`Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, welcome invite tracker, dan admin transcript sudah dibuat.${warning}`);
+    await interaction.editReply(`Setup server selesai. Role, channel, verify, ticket, QRIS button, voice Room 1, server stats, welcome invite tracker, transcript, dan audit log sudah dibuat.${warning}`);
+    await logAdminAction(guild, {
+      action: 'Setup Server',
+      actorId: interaction.user.id,
+      description: 'Struktur role, permission, channel, dan panel server disinkronkan.',
+      fields: roleLayoutWarnings.length
+        ? [{ name: 'Warnings', value: roleLayoutWarnings.join(', ') }]
+        : []
+    });
   }
 
   return {
