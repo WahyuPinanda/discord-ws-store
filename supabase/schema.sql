@@ -94,6 +94,66 @@ create table if not exists public.giveaway_entries (
   primary key (giveaway_id, user_id)
 );
 
+create table if not exists public.invite_stats (
+  guild_id text not null,
+  inviter_id text not null,
+  invite_count bigint not null default 0 check (invite_count >= 0),
+  updated_at timestamptz not null default now(),
+  primary key (guild_id, inviter_id)
+);
+
+create or replace function public.sync_invite_count(
+  p_guild_id text,
+  p_inviter_id text,
+  p_observed_total bigint
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_total bigint;
+begin
+  insert into public.invite_stats (guild_id, inviter_id, invite_count, updated_at)
+  values (p_guild_id, p_inviter_id, greatest(p_observed_total, 0), now())
+  on conflict (guild_id, inviter_id) do update
+  set invite_count = greatest(invite_stats.invite_count, excluded.invite_count),
+      updated_at = now()
+  returning invite_count into current_total;
+
+  return current_total;
+end;
+$$;
+
+create or replace function public.increment_invite_count(
+  p_guild_id text,
+  p_inviter_id text
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_total bigint;
+begin
+  insert into public.invite_stats (guild_id, inviter_id, invite_count, updated_at)
+  values (p_guild_id, p_inviter_id, 1, now())
+  on conflict (guild_id, inviter_id) do update
+  set invite_count = invite_stats.invite_count + 1,
+      updated_at = now()
+  returning invite_count into current_total;
+
+  return current_total;
+end;
+$$;
+
+revoke all on function public.sync_invite_count(text, text, bigint) from public, anon, authenticated;
+revoke all on function public.increment_invite_count(text, text) from public, anon, authenticated;
+grant execute on function public.sync_invite_count(text, text, bigint) to service_role;
+grant execute on function public.increment_invite_count(text, text) to service_role;
+
 create or replace function public.touch_updated_at()
 returns trigger as $$
 begin
@@ -135,3 +195,4 @@ alter table public.service_statuses enable row level security;
 alter table public.panel_text_overrides enable row level security;
 alter table public.giveaways enable row level security;
 alter table public.giveaway_entries enable row level security;
+alter table public.invite_stats enable row level security;

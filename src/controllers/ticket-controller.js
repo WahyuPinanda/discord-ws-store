@@ -16,8 +16,8 @@ function rekberModal() {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('rekber:buyer')
-          .setLabel('Username Discord Pembeli (Cth: keii123)')
-          .setPlaceholder('keii123')
+          .setLabel('Username Discord Pembeli (Cth: wsstore123)')
+          .setPlaceholder('wsstore123')
           .setStyle(TextInputStyle.Short)
           .setMinLength(2)
           .setMaxLength(32)
@@ -26,8 +26,8 @@ function rekberModal() {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('rekber:seller')
-          .setLabel('Username Discord Penjual (Cth: keii123)')
-          .setPlaceholder('keii123')
+          .setLabel('Username Discord Penjual (Cth: wsstore123)')
+          .setPlaceholder('wsstore123')
           .setStyle(TextInputStyle.Short)
           .setMinLength(2)
           .setMaxLength(32)

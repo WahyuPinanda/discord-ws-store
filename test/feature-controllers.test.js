@@ -74,10 +74,10 @@ test('rekber button opens the buyer and seller form with the requested example',
   assert.equal(interaction.modal.data.custom_id, 'ticket:rekber-modal');
   assert.equal(interaction.modal.data.title, 'Form Ticket Rekber');
   const inputs = interaction.modal.components.map((row) => row.components[0].data);
-  assert.equal(inputs[0].label, 'Username Discord Pembeli (Cth: keii123)');
-  assert.equal(inputs[1].label, 'Username Discord Penjual (Cth: keii123)');
-  assert.equal(inputs[0].placeholder, 'keii123');
-  assert.equal(inputs[1].placeholder, 'keii123');
+  assert.equal(inputs[0].label, 'Username Discord Pembeli (Cth: wsstore123)');
+  assert.equal(inputs[1].label, 'Username Discord Penjual (Cth: wsstore123)');
+  assert.equal(inputs[0].placeholder, 'wsstore123');
+  assert.equal(inputs[1].placeholder, 'wsstore123');
   assert.equal(inputs[2].label, 'Jumlah Transaksi (Rp / Robux)');
   assert.equal(calls.length, 0);
 });

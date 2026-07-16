@@ -378,6 +378,7 @@ const {
   handleInviteCreate,
   handleInviteDelete
 } = createInviteTrackerFeature({
+  supabase,
   channelMatchesName,
   unverifiedRoleName: ROLE.unverified,
   welcomeChannelName: CHANNEL.welcome
