@@ -1,4 +1,4 @@
-import { ChannelType } from 'discord.js';
+import { ChannelType, PermissionsBitField } from 'discord.js';
 
 export function channelNameKey(name) {
   return String(name)
@@ -14,6 +14,27 @@ export function channelMatchesName(channel, name) {
   return channel.name === name || channelNameKey(channel.name) === channelNameKey(name);
 }
 
+async function reconcileRole(role, name, options) {
+  const changes = {};
+
+  if (role.name !== name) changes.name = name;
+  if (Object.hasOwn(options, 'hoist') && role.hoist !== Boolean(options.hoist)) {
+    changes.hoist = Boolean(options.hoist);
+  }
+  if (Object.hasOwn(options, 'mentionable') && role.mentionable !== Boolean(options.mentionable)) {
+    changes.mentionable = Boolean(options.mentionable);
+  }
+  if (Object.hasOwn(options, 'permissions')) {
+    const expectedPermissions = new PermissionsBitField(role.permissions)
+      .add(options.permissions || []);
+    if (role.permissions.bitfield !== expectedPermissions.bitfield) {
+      changes.permissions = expectedPermissions;
+    }
+  }
+
+  return Object.keys(changes).length ? role.edit(changes) : role;
+}
+
 function findManagedChannel(guild, type, name, parent) {
   const matches = guild.channels.cache.filter(
     (channel) => channel.type === type && channelMatchesName(channel, name)
@@ -26,14 +47,13 @@ function findManagedChannel(guild, type, name, parent) {
 
 export async function ensureRole(guild, name, options = {}) {
   const existing = guild.roles.cache.find((role) => role.name === name);
-  if (existing) return existing;
+  if (existing) return reconcileRole(existing, name, options);
 
   const aliasMatch = options.aliases
     ?.map((alias) => guild.roles.cache.find((role) => role.name === alias))
     .find(Boolean);
   if (aliasMatch) {
-    await aliasMatch.setName(name);
-    return aliasMatch;
+    return reconcileRole(aliasMatch, name, options);
   }
 
   return guild.roles.create({

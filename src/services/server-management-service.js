@@ -222,16 +222,17 @@ export function createServerManagementService({
       permissions: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ManageMessages]
     });
     const middlemanRole = await ensureRole(guild, ROLE.middleman, { color: 0x1abc9c, hoist: true });
-    const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db });
+    const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db, hoist: false });
     const notifyMeRole = guild.roles.cache.find((role) => role.name.toLowerCase() === 'notifyme');
-    await ensureRole(guild, ROLE.creator, { color: 0x9b59b6 });
-    await ensureRole(guild, ROLE.booster, { color: 0xff73fa });
-    await ensureRole(guild, ROLE.customer, { color: 0x2ecc71 });
+    await ensureRole(guild, ROLE.creator, { color: 0x9b59b6, hoist: true });
+    await ensureRole(guild, ROLE.booster, { color: 0xff73fa, hoist: true });
+    await ensureRole(guild, ROLE.customer, { color: 0x2ecc71, hoist: false });
     const clientRole = await ensureRole(guild, ROLE.client, {
       color: 0x3498db,
+      hoist: false,
       aliases: VERIFIED_ROLE_ALIASES
     });
-    const unverifiedRole = await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d });
+    const unverifiedRole = await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d, hoist: false });
     for (const tier of TIER_ROLES) {
       await ensureRole(guild, tier.name, { color: 0x00d2ff, hoist: true, aliases: tier.aliases });
     }
