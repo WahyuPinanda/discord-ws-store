@@ -13,8 +13,10 @@ import {
   channelMatchesName,
   channelNameKey,
   ensureAnnouncementChannel,
+  ensureBotDisplayRole,
   ensureCategory,
   ensureRole,
+  ensureRoleStackAbove,
   ensureTextChannel,
   ensureVoiceChannel
 } from './discord-resource-service.js';
@@ -226,16 +228,24 @@ export function createServerManagementService({
     const notifyMeRole = guild.roles.cache.find((role) => role.name.toLowerCase() === 'notifyme');
     await ensureRole(guild, ROLE.creator, { color: 0x9b59b6, hoist: true });
     await ensureRole(guild, ROLE.booster, { color: 0xff73fa, hoist: true });
-    await ensureRole(guild, ROLE.customer, { color: 0x2ecc71, hoist: false });
+    const customerRole = await ensureRole(guild, ROLE.customer, { color: 0x2ecc71, hoist: false });
     const clientRole = await ensureRole(guild, ROLE.client, {
       color: 0x3498db,
       hoist: false,
       aliases: VERIFIED_ROLE_ALIASES
     });
     const unverifiedRole = await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d, hoist: false });
+    const tierRoles = [];
     for (const tier of TIER_ROLES) {
-      await ensureRole(guild, tier.name, { color: 0x00d2ff, hoist: true, aliases: tier.aliases });
+      tierRoles.push(await ensureRole(guild, tier.name, {
+        color: tier.color,
+        syncColor: true,
+        hoist: true,
+        aliases: tier.aliases
+      }));
     }
+    await ensureRoleStackAbove(customerRole, tierRoles);
+    await ensureBotDisplayRole(guild, ROLE.botDisplay, ownerRole, { color: 0x00d2ff });
 
     const everyone = guild.roles.everyone;
     const staffAllow = [

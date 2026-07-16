@@ -18,6 +18,9 @@ async function reconcileRole(role, name, options) {
   const changes = {};
 
   if (role.name !== name) changes.name = name;
+  if (options.syncColor && Object.hasOwn(options, 'color') && role.color !== options.color) {
+    changes.color = options.color;
+  }
   if (Object.hasOwn(options, 'hoist') && role.hoist !== Boolean(options.hoist)) {
     changes.hoist = Boolean(options.hoist);
   }
@@ -63,6 +66,39 @@ export async function ensureRole(guild, name, options = {}) {
     mentionable: Boolean(options.mentionable),
     permissions: options.permissions || []
   });
+}
+
+export async function ensureBotDisplayRole(guild, name, ownerRole, options = {}) {
+  const botMember = guild.members.me || await guild.members.fetchMe();
+  const botManagedRole = botMember.roles.highest;
+
+  if (botManagedRole.position <= ownerRole.position) {
+    throw new Error(`Move the ${botManagedRole.name} role above ${ownerRole.name} before running setup.`);
+  }
+
+  const displayRole = await ensureRole(guild, name, { ...options, hoist: true });
+  if (!botMember.roles.cache.has(displayRole.id)) {
+    await botMember.roles.add(displayRole);
+  }
+
+  const targetPosition = botManagedRole.position - 1;
+  if (displayRole.position !== targetPosition) {
+    await displayRole.setPosition(targetPosition);
+  }
+
+  return displayRole;
+}
+
+export async function ensureRoleStackAbove(anchorRole, orderedRoles) {
+  const currentOrder = [...orderedRoles].sort((left, right) => right.position - left.position);
+  const alreadyOrdered = orderedRoles.every((role) => role.position > anchorRole.position)
+    && currentOrder.every((role, index) => role.id === orderedRoles[index].id);
+  if (alreadyOrdered) return orderedRoles;
+
+  for (const role of orderedRoles) {
+    await role.setPosition(anchorRole.position + 1);
+  }
+  return orderedRoles;
 }
 
 export async function ensureCategory(guild, name, permissionOverwrites = []) {

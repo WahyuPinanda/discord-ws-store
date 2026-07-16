@@ -1,4 +1,5 @@
 export const ROLE = {
+  botDisplay: '🤖 WS Store APP',
   owner: '👑 Owner',
   admin: '🛡️ Admin',
   middleman: '🤝 Middleman / Rekber Staff',
@@ -13,11 +14,11 @@ export const ROLE = {
 export const VERIFIED_ROLE_ALIASES = ['✅ Client'];
 
 export const TIER_ROLES = [
-  { min: 50_000_000, name: '👑 Royal Customer 50Jt+', aliases: ['💎 Customer 50Jt+'] },
-  { min: 20_000_000, name: '💎 Diamond Customer 20Jt+', aliases: ['💠 Customer 20Jt+'] },
-  { min: 10_000_000, name: '🔷 Prime Customer 10Jt+', aliases: ['🔷 Customer 10Jt+'] },
-  { min: 5_000_000, name: '💠 Elite Customer 5Jt+', aliases: ['🔹 Customer 5Jt+'] },
-  { min: 1_000_000, name: '⭐ Loyal Customer 1Jt+', aliases: ['⭐ Customer 1Jt+'] }
+  { min: 50_000_000, name: '👑 Royal Customer 50Jt+', color: 0xf1c40f, aliases: ['💎 Customer 50Jt+'] },
+  { min: 20_000_000, name: '💎 Diamond Customer 20Jt+', color: 0x00d2ff, aliases: ['💠 Customer 20Jt+'] },
+  { min: 10_000_000, name: '🔷 Prime Customer 10Jt+', color: 0x5865f2, aliases: ['🔷 Customer 10Jt+'] },
+  { min: 5_000_000, name: '💠 Elite Customer 5Jt+', color: 0x9b59b6, aliases: ['🔹 Customer 5Jt+'] },
+  { min: 1_000_000, name: '⭐ Loyal Customer 1Jt+', color: 0x2ecc71, aliases: ['⭐ Customer 1Jt+'] }
 ];
 
 export const VERIFY_IMAGE_PATH = 'assets/ws-store-verify-banner.png';
