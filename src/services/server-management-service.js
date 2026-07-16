@@ -19,6 +19,14 @@ import {
   ensureVoiceChannel
 } from './discord-resource-service.js';
 
+const BOT_PUBLISH_PERMISSIONS = [
+  PermissionsBitField.Flags.ViewChannel,
+  PermissionsBitField.Flags.SendMessages,
+  PermissionsBitField.Flags.ReadMessageHistory,
+  PermissionsBitField.Flags.EmbedLinks,
+  PermissionsBitField.Flags.AttachFiles
+];
+
 export function createServerManagementService({
   client,
   embedBase,
@@ -215,6 +223,7 @@ export function createServerManagementService({
     });
     const middlemanRole = await ensureRole(guild, ROLE.middleman, { color: 0x1abc9c, hoist: true });
     const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db });
+    const notifyMeRole = guild.roles.cache.find((role) => role.name.toLowerCase() === 'notifyme');
     await ensureRole(guild, ROLE.creator, { color: 0x9b59b6 });
     await ensureRole(guild, ROLE.booster, { color: 0xff73fa });
     await ensureRole(guild, ROLE.customer, { color: 0x2ecc71 });
@@ -244,13 +253,7 @@ export function createServerManagementService({
       ...ownerAdminPublish,
       {
         id: rolimonsBotRole.id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-          PermissionsBitField.Flags.EmbedLinks,
-          PermissionsBitField.Flags.AttachFiles
-        ]
+        allow: BOT_PUBLISH_PERMISSIONS
       }
     ];
     const publicReadOnly = [
@@ -268,6 +271,25 @@ export function createServerManagementService({
     const publicChat = [
       { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
       { id: clientRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+      ...staffAllow
+    ];
+    const socialMediaReadOnly = [
+      { id: everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+      {
+        id: clientRole.id,
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.ReadMessageHistory,
+          PermissionsBitField.Flags.AddReactions
+        ],
+        deny: [
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.SendMessagesInThreads,
+          PermissionsBitField.Flags.CreatePublicThreads,
+          PermissionsBitField.Flags.CreatePrivateThreads
+        ]
+      },
+      ...(notifyMeRole ? [{ id: notifyMeRole.id, allow: BOT_PUBLISH_PERMISSIONS }] : []),
       ...staffAllow
     ];
     const staffOnly = [
@@ -331,9 +353,10 @@ export function createServerManagementService({
     const ticketRekberChannel = await ensureTextChannel(guild, CHANNEL.ticketRekber, ticketCategory, publicReadOnly);
     const ticketSupportChannel = await ensureTextChannel(guild, CHANNEL.ticketSupport, ticketCategory, publicReadOnly);
 
-    for (const name of ['💬・chat', '🏷️・check-payout', '❌・report-scammer', '🧾・vouches', CHANNEL.socialMedia]) {
+    for (const name of ['💬・chat', '🏷️・check-payout', '❌・report-scammer', '🧾・vouches']) {
       await ensureTextChannel(guild, name, loungeCategory, publicChat);
     }
+    await ensureTextChannel(guild, CHANNEL.socialMedia, loungeCategory, socialMediaReadOnly);
     await ensureTextChannel(guild, CHANNEL.giveaways, loungeCategory, publicReadOnly);
     await ensureVoiceChannel(guild, 'Room 1', loungeCategory, publicVoice);
     await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, transactionReadOnly);
