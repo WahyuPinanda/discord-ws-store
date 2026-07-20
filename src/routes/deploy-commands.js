@@ -42,6 +42,10 @@ const commands = [
     .setDescription('Refresh semua panel WS Store yang terdaftar.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder()
+    .setName('sync-integrations')
+    .setDescription('Sinkronkan permission bot eksternal seperti NotifyMe.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+  new SlashCommandBuilder()
     .setName('add-transaction')
     .setDescription('Tambah transaksi manual dan update tier customer.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

@@ -11,6 +11,7 @@ export function createInteractionController({
   resetPanelText,
   handleServiceStatusCommand,
   handleGiveawayCommand,
+  handleSyncIntegrationsCommand = async () => {},
   handleVerify,
   createRekberTicket,
   createTicket,
@@ -32,6 +33,7 @@ export function createInteractionController({
       'reset-panel-text': () => resetPanelText(interaction),
       open: () => handleServiceStatusCommand(interaction, true),
       close: () => handleServiceStatusCommand(interaction, false),
+      'sync-integrations': () => handleSyncIntegrationsCommand(interaction),
       giveaway: () => handleGiveawayCommand(interaction)
     };
 

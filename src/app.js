@@ -411,10 +411,14 @@ const {
 
 const {
   ensureNotifyMeChannelAccess,
-  handleIntegrationMemberAdd
+  handleIntegrationMemberAdd,
+  handleSyncIntegrationsCommand
 } = createIntegrationPermissionService({
   channelMatchesName,
-  socialMediaChannelName: CHANNEL.socialMedia
+  socialMediaChannelName: CHANNEL.socialMedia,
+  memberIsStaff,
+  memberRoleNamesToRemove: [ROLE.client, ...VERIFIED_ROLE_ALIASES, ROLE.unverified],
+  logAdminAction
 });
 
 async function handleGuildMemberAdd(member) {
@@ -433,6 +437,7 @@ const handleInteraction = withInteractionErrorHandling(createInteractionControll
   resetPanelText,
   handleServiceStatusCommand,
   handleGiveawayCommand,
+  handleSyncIntegrationsCommand,
   handleVerify,
   createRekberTicket,
   createTicket,

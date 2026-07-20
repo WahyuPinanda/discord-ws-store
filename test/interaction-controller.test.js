@@ -17,6 +17,7 @@ function createController(overrides = {}) {
     resetPanelText: record('resetPanelText'),
     handleServiceStatusCommand: record('handleServiceStatusCommand'),
     handleGiveawayCommand: record('handleGiveawayCommand'),
+    handleSyncIntegrationsCommand: record('handleSyncIntegrationsCommand'),
     handleVerify: record('handleVerify'),
     createRekberTicket: record('createRekberTicket'),
     createTicket: record('createTicket'),
@@ -73,6 +74,15 @@ test('routes service commands with their requested state', async () => {
 
   assert.deepEqual(calls[0], ['handleServiceStatusCommand', open, true]);
   assert.deepEqual(calls[1], ['handleServiceStatusCommand', close, false]);
+});
+
+test('routes sync-integrations to the integration service', async () => {
+  const { calls, handleInteraction } = createController();
+  const interaction = chatInteraction('sync-integrations');
+
+  await handleInteraction(interaction);
+
+  assert.deepEqual(calls[0], ['handleSyncIntegrationsCommand', interaction]);
 });
 
 test('parses order service buttons without changing the custom id contract', async () => {
