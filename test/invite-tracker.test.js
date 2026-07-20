@@ -116,3 +116,20 @@ test('invite tracker falls back to the combined Discord total before schema migr
 
   assert.match(welcomePayload.content, /now has 7 total invites/);
 });
+
+test('invite tracker ignores bot accounts', async () => {
+  const tracker = createInviteTrackerFeature({
+    supabase: {},
+    channelMatchesName: () => false,
+    unverifiedRoleName: 'Unverified',
+    welcomeChannelName: 'welcome'
+  });
+
+  await tracker.handleGuildMemberAdd({
+    user: { bot: true },
+    guild: {
+      roles: { cache: { find: () => assert.fail('bot role assignment must be skipped') } },
+      invites: { fetch: () => assert.fail('bot invite tracking must be skipped') }
+    }
+  });
+});

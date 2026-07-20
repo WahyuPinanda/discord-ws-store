@@ -154,6 +154,8 @@ export function createInviteTrackerFeature({
   }
 
   async function handleGuildMemberAdd(member) {
+    if (member.user?.bot) return;
+
     const role = member.guild.roles.cache.find((item) => item.name === unverifiedRoleName);
     if (role) {
       await member.roles.add(role).catch((error) => logger.warn('Failed to add unverified role:', error.message));

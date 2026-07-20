@@ -29,6 +29,7 @@ import { channelMatchesName } from './services/discord-resource-service.js';
 import { createGiveawayFeature } from './services/giveaway-service.js';
 import { howToOrderPanelPayload, rulesPanelPayload } from './services/info-panel-service.js';
 import { createInviteTrackerFeature } from './services/invite-tracker-service.js';
+import { createIntegrationPermissionService } from './services/integration-permission-service.js';
 import { itemTumbalTradePayload, valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './services/market-panel-service.js';
 import { createPanelRegistryService, isPanelTextOverrideSchemaMissing } from './services/panel-registry-service.js';
 import { createServerManagementService } from './services/server-management-service.js';
@@ -398,7 +399,7 @@ const { handleMessageCreate } = createAntiSpamFeature({
 
 const {
   refreshInviteCache,
-  handleGuildMemberAdd,
+  handleGuildMemberAdd: handleInviteTrackerMemberAdd,
   handleInviteCreate,
   handleInviteDelete
 } = createInviteTrackerFeature({
@@ -407,6 +408,19 @@ const {
   unverifiedRoleName: ROLE.unverified,
   welcomeChannelName: CHANNEL.welcome
 });
+
+const {
+  ensureNotifyMeChannelAccess,
+  handleIntegrationMemberAdd
+} = createIntegrationPermissionService({
+  channelMatchesName,
+  socialMediaChannelName: CHANNEL.socialMedia
+});
+
+async function handleGuildMemberAdd(member) {
+  await handleIntegrationMemberAdd(member);
+  await handleInviteTrackerMemberAdd(member);
+}
 
 const handleInteraction = withInteractionErrorHandling(createInteractionController({
   memberIsStaff,
@@ -448,6 +462,7 @@ client.once(Events.ClientReady, async () => {
   if (guild) {
     await loadServiceStatuses(guild.id).catch((error) => console.warn('Service status load failed:', error.message));
     await refreshInviteCache(guild).catch((error) => console.warn('Invite cache refresh failed:', error.message));
+    await ensureNotifyMeChannelAccess(guild).catch((error) => console.warn('NotifyMe permission sync failed:', error.message));
     await refreshServerStats(guild).catch((error) => console.warn('Server stats refresh failed:', error.message));
     await refreshPanels(guild).catch((error) => console.warn('Panel refresh failed:', error.message));
     lastPeriodicUiSnapshot = guildUiSnapshot(guild.id);

@@ -20,6 +20,10 @@ import {
   ensureTextChannel,
   ensureVoiceChannel
 } from './discord-resource-service.js';
+import {
+  findNotifyMeRole,
+  NOTIFYME_PUBLISH_PERMISSIONS
+} from './integration-permission-service.js';
 
 const BOT_PUBLISH_PERMISSIONS = [
   PermissionsBitField.Flags.ViewChannel,
@@ -227,7 +231,7 @@ export function createServerManagementService({
     });
     const middlemanRole = await ensureRole(guild, ROLE.middleman, { color: 0x1abc9c, hoist: true });
     const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db, hoist: false });
-    const notifyMeRole = guild.roles.cache.find((role) => role.name.toLowerCase() === 'notifyme');
+    const notifyMeRole = findNotifyMeRole(guild);
     await ensureRole(guild, ROLE.creator, { color: 0x9b59b6, hoist: true });
     await ensureRole(guild, ROLE.booster, { color: 0xff73fa, hoist: true });
     const customerRole = await ensureRole(guild, ROLE.customer, { color: 0x2ecc71, hoist: false });
@@ -312,7 +316,7 @@ export function createServerManagementService({
           PermissionsBitField.Flags.CreatePrivateThreads
         ]
       },
-      ...(notifyMeRole ? [{ id: notifyMeRole.id, allow: BOT_PUBLISH_PERMISSIONS }] : []),
+      ...(notifyMeRole ? [{ id: notifyMeRole.id, allow: NOTIFYME_PUBLISH_PERMISSIONS }] : []),
       ...staffAllow
     ];
     const staffOnly = [
