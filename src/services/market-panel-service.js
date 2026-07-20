@@ -100,8 +100,8 @@ export function itemTumbalTradePayload(embedBase, override = {}) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('ticket:create:order:limited')
-          .setLabel('Beli Item Tumbal')
-          .setEmoji('🎟️')
+          .setLabel('Buy Limited Item')
+          .setEmoji('💎')
           .setStyle(ButtonStyle.Success)
       )
     ]

@@ -15,8 +15,10 @@ test('group payout panel includes rate, community links, banner, and ticket butt
 
   assert.match(embed.title, /PAYOUT COMMUNITY/);
   assert.match(embed.description, /Rate: Rp 120 \/ 1 Robux/);
-  assert.match(embed.description, /100 🪙 ➤ Rp 12\.000/);
-  assert.match(embed.description, /10000 🪙 ➤ Rp 1\.200\.000/);
+  assert.doesNotMatch(embed.description, /➤/);
+  assert.doesNotMatch(embed.description, /^100 Robux/m);
+  assert.match(embed.description, /500 Robux = Rp 60\.000/);
+  assert.match(embed.description, /10000 Robux = Rp 1\.200\.000/);
   assert.match(embed.description, /1064667246\/BEJIRLAH-Community/);
   assert.match(embed.description, /1108229986\/Vandamoy/);
   assert.match(embed.description, /groups\/654669898/);

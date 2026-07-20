@@ -17,7 +17,7 @@ const COMMUNITY_LINKS = [
   }
 ];
 
-const PAYOUT_AMOUNTS = [100, 500, 1_000, 2_000, 5_000, 10_000];
+const PAYOUT_AMOUNTS = [500, 1_000, 2_000, 5_000, 10_000];
 const RATE_PER_ROBUX = 120;
 const RUPIAH_FORMATTER = new Intl.NumberFormat('id-ID');
 
@@ -31,13 +31,13 @@ function communityLinkRows() {
 
 function payoutPriceRows() {
   return PAYOUT_AMOUNTS.map((amount) =>
-    `${amount} 🪙 ➤ ${formatRupiah(amount * RATE_PER_ROBUX)}`
+    `${amount} Robux = ${formatRupiah(amount * RATE_PER_ROBUX)}`
   );
 }
 
 const DEFAULT_GROUP_PAYOUT_DESCRIPTION = [
-  '**Pengiriman Robux Langsung (Tanpa Login/Pending) ✅**',
-  'Robux dikirim langsung ke saldo akun melalui sistem Payout Community Roblox kami. **SYARAT WAJIB:** Sesuai kebijakan Roblox, kamu **wajib sudah bergabung (Join) di Community kami minimal 14 hari** agar sistem mengizinkan proses payout.',
+  '**Pengiriman Robux Langsung (Tanpa Login/Pending)**',
+  'Robux dikirim langsung ke saldo akun melalui sistem Payout Community Roblox. **SYARAT WAJIB:** Sesuai kebijakan Roblox, kamu **wajib sudah bergabung (Join) di Community minimal 14 hari** agar sistem mengizinkan proses payout.',
   '',
   '**Link Grup Komunitas:**',
   ...communityLinkRows(),
