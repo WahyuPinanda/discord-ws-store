@@ -27,6 +27,7 @@ import { createAntiSpamFeature } from './services/anti-spam-service.js';
 import { createAuditLogService } from './services/audit-log-service.js';
 import { channelMatchesName } from './services/discord-resource-service.js';
 import { createGiveawayFeature } from './services/giveaway-service.js';
+import { groupPayoutPricePayload } from './services/group-payout-panel-service.js';
 import { howToOrderPanelPayload, rulesPanelPayload } from './services/info-panel-service.js';
 import { createInviteTrackerFeature } from './services/invite-tracker-service.js';
 import { createIntegrationPermissionService } from './services/integration-permission-service.js';
@@ -112,6 +113,7 @@ const {
     market_item_tumbal_trade: (overrides) => itemTumbalTradePayload(embedBase, overrides),
     price_via_login: (overrides) => viaLoginPricePayload(embedBase, overrides),
     price_via_username: (overrides) => viaUsernamePricePayload(embedBase, overrides),
+    price_group_payout: (overrides) => groupPayoutPricePayload(embedBase, overrides),
     seed_rules: () => rulesPanelPayload(embedBase),
     seed_how_to_order: () => howToOrderPanelPayload(embedBase)
   }

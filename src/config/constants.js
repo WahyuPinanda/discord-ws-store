@@ -147,6 +147,7 @@ export const CHANNEL = {
   ticketSupport: '🛠️・ticket-support',
   valueUpdate: '🔎・value-update-realtime',
   robuxViaUsername: '💎・robux-via-username',
+  groupPayout: '🌟・group-payout',
   socialMedia: '📱・social-media',
   giveaways: '🎉・giveaways',
   successTransaction: '✅・success-transaction',

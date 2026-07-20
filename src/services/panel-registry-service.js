@@ -2,7 +2,8 @@ const EDITABLE_PANEL_TYPES = new Set([
   'market_value_update',
   'market_item_tumbal_trade',
   'price_via_login',
-  'price_via_username'
+  'price_via_username',
+  'price_group_payout'
 ]);
 
 function panelTextOverrideKey(guildId, type) {

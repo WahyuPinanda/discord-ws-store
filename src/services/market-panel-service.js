@@ -1,10 +1,9 @@
 import {
   ActionRowBuilder,
-  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle
 } from 'discord.js';
-import { existsSync } from 'node:fs';
+import { attachBanner, buyRobuxRow, separatedLinks } from './market-panel-utils.js';
 
 const VIA_LOGIN_IMAGE_PATH = 'assets/ws-store-via-login.png';
 const VIA_USERNAME_IMAGE_PATH = 'assets/ws-store-via-username.png';
@@ -64,28 +63,6 @@ const TUMBAL_TRADE_LINKS = [
   'https://www.roblox.com/catalog/3016590511/Tallaheggsee-Zombie-Slayer',
   'https://www.roblox.com/catalog/110706992/GGE'
 ];
-
-function buyRobuxRow(service) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`ticket:create:order:${service}`)
-      .setLabel('Buy Robux')
-      .setEmoji('🪙')
-      .setStyle(ButtonStyle.Success)
-  );
-}
-
-function attachBanner(payload, imagePath, fileName) {
-  if (!existsSync(imagePath)) return payload;
-
-  payload.embeds[0].setImage(`attachment://${fileName}`);
-  payload.files = [new AttachmentBuilder(imagePath, { name: fileName })];
-  return payload;
-}
-
-function separatedLinks(links) {
-  return links.flatMap((link, index) => (index === 0 ? [link] : ['', link]));
-}
 
 export function valueUpdatePayload(embedBase, override = {}) {
   return {

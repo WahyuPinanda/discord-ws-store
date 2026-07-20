@@ -373,7 +373,7 @@ export function createServerManagementService({
     const itemTumbalChannel = await ensureTextChannel(guild, '➤・item-tumbal-trade', marketCategory, ownerAdminPublish);
     const robuxChannel = await ensureTextChannel(guild, '💎・robux-instant-vilog', marketCategory, ownerAdminPublish);
     const viaUsernameChannel = await ensureTextChannel(guild, CHANNEL.robuxViaUsername, marketCategory, ownerAdminPublish);
-    await ensureTextChannel(guild, '🌟・group-payout', marketCategory, ownerAdminPublish);
+    const groupPayoutChannel = await ensureTextChannel(guild, CHANNEL.groupPayout, marketCategory, ownerAdminPublish);
     const valueUpdateChannel = await ensureTextChannel(guild, CHANNEL.valueUpdate, marketCategory, valueUpdatePublish);
 
     const ticketOrderChannel = await ensureTextChannel(guild, CHANNEL.ticketOrder, ticketCategory, publicReadOnly);
@@ -403,6 +403,7 @@ export function createServerManagementService({
       [itemTumbalChannel, 'market_item_tumbal_trade'],
       [robuxChannel, 'price_via_login'],
       [viaUsernameChannel, 'price_via_username'],
+      [groupPayoutChannel, 'price_group_payout'],
       [rulesChannel, 'seed_rules'],
       [howToOrderChannel, 'seed_how_to_order']
     ];

@@ -16,6 +16,7 @@ const serviceCommands = [
 const editablePanels = [
   ['price_via_login', 'Price Via Login'],
   ['price_via_username', 'Price Via Username'],
+  ['price_group_payout', 'Price Group Payout'],
   ['market_item_tumbal_trade', 'Item Tumbal Trade'],
   ['market_value_update', 'Value Update Realtime']
 ];

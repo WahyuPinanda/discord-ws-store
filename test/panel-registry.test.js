@@ -95,3 +95,9 @@ test('panel publishing recreates a panel when its old Discord message is gone', 
   assert.equal(message.id, 'message-new');
   assert.deepEqual(counts(), { sendCount: 1, upsertCount: 1 });
 });
+
+test('group payout panel is available for runtime text editing', () => {
+  const { service } = createRegistry({ fetchError: null });
+
+  assert.equal(service.editablePanelTypes().has('price_group_payout'), true);
+});
