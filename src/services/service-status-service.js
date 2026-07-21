@@ -78,6 +78,15 @@ export function createServiceStatusFeature({
   }
 
   function orderTicketServiceIsAvailable(guildId, service, date = new Date()) {
+    const orderOverrideIsActive = serviceStatusIsSet(guildId, 'order', date);
+    const serviceOverrideIsActive = serviceStatusIsSet(guildId, service, date);
+
+    // An explicit order close is the master switch for every order service.
+    if (orderOverrideIsActive && !serviceIsOpen(guildId, 'order')) return false;
+
+    // Opening one service manually must work outside normal operating hours.
+    if (serviceOverrideIsActive) return serviceIsOpen(guildId, service);
+
     return ticketServiceIsAvailable(guildId, 'order', date)
       && serviceIsOpen(guildId, service);
   }
