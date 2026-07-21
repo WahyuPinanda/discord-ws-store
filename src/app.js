@@ -1,17 +1,10 @@
 import {
-  ActionRowBuilder,
-  AttachmentBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   Client,
   EmbedBuilder,
   Events,
   GatewayIntentBits,
-  MessageFlags,
-  Partials,
-  PermissionFlagsBits
+  Partials
 } from 'discord.js';
-import { existsSync } from 'node:fs';
 import { config } from './config/env.js';
 import { CATEGORY, CHANNEL, ORDER_TICKET_SERVICES, REKBER_IMAGE_PATH, ROLE, SERVICE_DEFINITIONS, SPAM_SETTINGS, TIER_ROLES, VERIFIED_ROLE_ALIASES, VERIFY_IMAGE_PATH } from './config/constants.js';
 import { createAdminController } from './controllers/admin-controller.js';
@@ -25,6 +18,8 @@ import { withInteractionErrorHandling } from './middlewares/interaction-error-ha
 import { registerDiscordEventRoutes } from './routes/discord-event-routes.js';
 import { createAntiSpamFeature } from './services/anti-spam-service.js';
 import { createAuditLogService } from './services/audit-log-service.js';
+import { createBotLifecycleService } from './services/bot-lifecycle-service.js';
+import { createCorePayloadService } from './services/core-payload-service.js';
 import { channelMatchesName } from './services/discord-resource-service.js';
 import { createGiveawayFeature } from './services/giveaway-service.js';
 import { groupPayoutPricePayload } from './services/group-payout-panel-service.js';
@@ -32,6 +27,7 @@ import { howToOrderPanelPayload, rulesPanelPayload } from './services/info-panel
 import { createInviteTrackerFeature } from './services/invite-tracker-service.js';
 import { createIntegrationPermissionService } from './services/integration-permission-service.js';
 import { itemTumbalTradePayload, valueUpdatePayload, viaLoginPricePayload, viaUsernamePricePayload } from './services/market-panel-service.js';
+import { createMemberAccessService } from './services/member-access-service.js';
 import { createPanelRegistryService, isPanelTextOverrideSchemaMissing } from './services/panel-registry-service.js';
 import { createServerManagementService } from './services/server-management-service.js';
 import { createServiceStatusFeature } from './services/service-status-service.js';
@@ -40,9 +36,7 @@ import { createTicketPanelFeature } from './services/ticket-panel-service.js';
 import { createTransactionService } from './services/transaction-service.js';
 import { createUiRefreshService } from './services/ui-refresh-service.js';
 
-let lastPeriodicUiSnapshot = null;
-let periodicUiRefreshRunning = false;
-let giveawayAutoEndRunning = false;
+const uiSnapshotState = { value: null };
 
 const client = new Client({
   intents: [
@@ -58,6 +52,28 @@ const client = new Client({
 
 let healthServer = null;
 let botStarted = false;
+
+const {
+  findVerifiedRole,
+  memberIsOwner,
+  memberIsStaff,
+  memberIsVerified,
+  staffRoleNames
+} = createMemberAccessService({
+  ownerDiscordId: config.ownerDiscordId,
+  roles: ROLE,
+  verifiedRoleAliases: VERIFIED_ROLE_ALIASES
+});
+
+const {
+  qrisReplyPayload,
+  ticketControlRows,
+  verifyPanelPayload
+} = createCorePayloadService({
+  config,
+  embedBase,
+  verifyImagePath: VERIFY_IMAGE_PATH
+});
 
 const {
   guildUiSnapshot,
@@ -160,7 +176,7 @@ const {
   refreshPanels,
   guildUiSnapshot,
   onSnapshot: (snapshot) => {
-    lastPeriodicUiSnapshot = snapshot;
+    uiSnapshotState.value = snapshot;
   }
 });
 
@@ -170,122 +186,16 @@ function embedBase() {
     .setFooter({ text: config.storeName });
 }
 
-function staffRoleNames() {
-  return [ROLE.owner, ROLE.admin, ROLE.middleman];
-}
-
-function findRoleByNames(guild, names) {
-  return guild.roles.cache.find((role) => names.includes(role.name));
-}
-
-function findVerifiedRole(guild) {
-  return findRoleByNames(guild, [ROLE.client, ...VERIFIED_ROLE_ALIASES]);
-}
-
-function memberIsVerified(member) {
-  return member.roles.cache.some((role) => [ROLE.client, ...VERIFIED_ROLE_ALIASES].includes(role.name));
-}
-
-function memberIsStaff(member) {
-  return member.permissions.has(PermissionFlagsBits.Administrator)
-    || staffRoleNames().some((roleName) => member.roles.cache.some((role) => role.name === roleName));
-}
-
-function memberIsOwner(member, userId) {
-  return userId === config.ownerDiscordId
-    || member.roles.cache.some((role) => role.name === ROLE.owner);
-}
-
 async function refreshGuildUiIfChanged(guild) {
   await loadServiceStatuses(guild.id);
   const snapshot = guildUiSnapshot(guild.id);
 
-  if (snapshot === lastPeriodicUiSnapshot) return false;
+  if (snapshot === uiSnapshotState.value) return false;
 
-  lastPeriodicUiSnapshot = snapshot;
+  uiSnapshotState.value = snapshot;
   await refreshServerStats(guild);
   await refreshPanels(guild, { reloadServiceStatuses: false });
   return true;
-}
-
-function verifyPanelPayload() {
-  const hasVerifyImage = existsSync(VERIFY_IMAGE_PATH);
-  const embed = embedBase()
-    .setTitle('🔐 VERIFICATION SYSTEM')
-    .setDescription([
-      `Selamat datang di **${config.storeName}**! 👋`,
-      '',
-      'Untuk mengakses seluruh channel dan fitur server, silakan lakukan verifikasi terlebih dahulu.',
-      '',
-      '📌 **Cara Verifikasi:**',
-      'Klik tombol **Verify** di bawah ini.',
-      '',
-      '⚠️ **Catatan:**',
-      '• Jangan berikan password, cookie, OTP, atau kode login kepada siapa pun.',
-      '• Jika ada kendala, buka ticket support setelah verifikasi.',
-      '',
-      '**Terima kasih dan selamat bergabung!**'
-    ].join('\n'));
-
-  if (hasVerifyImage) {
-    embed
-      .setThumbnail('attachment://ws-store-verify-banner.png')
-      .setImage('attachment://ws-store-verify-banner.png');
-  }
-
-  const payload = {
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('verify:member')
-          .setLabel('Verify')
-          .setEmoji('✅')
-          .setStyle(ButtonStyle.Primary)
-      )
-    ]
-  };
-
-  if (hasVerifyImage) {
-    payload.files = [new AttachmentBuilder(VERIFY_IMAGE_PATH, { name: 'ws-store-verify-banner.png' })];
-  }
-
-  return payload;
-}
-
-function ticketControlRows(type) {
-  const firstRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ticket:claim')
-      .setLabel('Claim Ticket')
-      .setEmoji('🎯')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('ticket:payment')
-      .setLabel('Payment QRIS')
-      .setEmoji('💳')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  if (type !== 'support') {
-    firstRow.addComponents(
-      new ButtonBuilder()
-        .setCustomId('ticket:complete')
-        .setLabel('Order Selesai')
-        .setEmoji('✅')
-        .setStyle(ButtonStyle.Success)
-    );
-  }
-
-  const secondRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ticket:close')
-      .setLabel('Close Ticket')
-      .setEmoji('🔒')
-      .setStyle(ButtonStyle.Danger)
-  );
-
-  return [firstRow, secondRow];
 }
 
 const { createTicketForMember } = createTicketCreationFeature({
@@ -324,22 +234,6 @@ const {
   createTicketForMember,
   logTicketEvent
 });
-
-function qrisReplyPayload({ ephemeral = false } = {}) {
-  const file = new AttachmentBuilder(config.qrisImagePath, { name: 'qris-ws-store.png' });
-  const payload = {
-    embeds: [
-      embedBase()
-        .setTitle('💳 QRIS WS Store')
-        .setDescription('Scan QRIS di bawah ini. Setelah pembayaran berhasil, kirim bukti transfer di ticket kamu.')
-        .setImage('attachment://qris-ws-store.png')
-    ],
-    files: [file]
-  };
-
-  if (ephemeral) payload.flags = MessageFlags.Ephemeral;
-  return payload;
-}
 
 const {
   addManualTransaction,
@@ -461,55 +355,33 @@ registerDiscordEventRoutes({
   handleInteraction
 });
 
+const botLifecycle = createBotLifecycleService({
+  client,
+  guildId: config.guildId,
+  keepSupabaseAwake,
+  loadServiceStatuses,
+  refreshInviteCache,
+  ensureIntegrationAccess: ensureNotifyMeChannelAccess,
+  refreshServerStats,
+  refreshPanels,
+  guildUiSnapshot,
+  checkStoreStatusAnnouncement,
+  refreshGuildUiIfChanged,
+  endDueGiveaways,
+  recordUiSnapshot: (snapshot) => {
+    uiSnapshotState.value = snapshot;
+  }
+});
+
 client.once(Events.ClientReady, async () => {
   console.log(`${client.user.tag} online for ${config.storeName}.`);
-  await keepSupabaseAwake().catch((error) => console.warn('Supabase heartbeat failed:', error.message));
-
-  const guild = await client.guilds.fetch(config.guildId).catch(() => null);
-  if (guild) {
-    await loadServiceStatuses(guild.id).catch((error) => console.warn('Service status load failed:', error.message));
-    await refreshInviteCache(guild).catch((error) => console.warn('Invite cache refresh failed:', error.message));
-    await ensureNotifyMeChannelAccess(guild).catch((error) => console.warn('NotifyMe permission sync failed:', error.message));
-    await refreshServerStats(guild).catch((error) => console.warn('Server stats refresh failed:', error.message));
-    await refreshPanels(guild).catch((error) => console.warn('Panel refresh failed:', error.message));
-    lastPeriodicUiSnapshot = guildUiSnapshot(guild.id);
-    await checkStoreStatusAnnouncement(guild).catch((error) => console.warn('Store status announcement check failed:', error.message));
-    await endDueGiveaways().catch((error) => console.warn('Giveaway auto-end failed:', error.message));
-  }
-
-  setInterval(async () => {
-    await keepSupabaseAwake().catch((error) => console.warn('Supabase heartbeat failed:', error.message));
-  }, 24 * 60 * 60 * 1000);
-
-  setInterval(async () => {
-    if (periodicUiRefreshRunning) return;
-    periodicUiRefreshRunning = true;
-
-    const targetGuild = await client.guilds.fetch(config.guildId).catch(() => null);
-    try {
-      if (targetGuild) {
-        await checkStoreStatusAnnouncement(targetGuild).catch((error) => console.warn('Store status announcement check failed:', error.message));
-        await refreshGuildUiIfChanged(targetGuild).catch((error) => console.warn('UI refresh check failed:', error.message));
-      }
-    } finally {
-      periodicUiRefreshRunning = false;
-    }
-  }, 60 * 1000);
-
-  setInterval(async () => {
-    if (giveawayAutoEndRunning) return;
-    giveawayAutoEndRunning = true;
-
-    try {
-      await endDueGiveaways().catch((error) => console.warn('Giveaway auto-end failed:', error.message));
-    } finally {
-      giveawayAutoEndRunning = false;
-    }
-  }, 30 * 1000);
+  await botLifecycle.initialize();
+  botLifecycle.start();
 });
 
 function shutdown(signal) {
   console.log(`Received ${signal}; shutting down Discord client.`);
+  botLifecycle.stop();
   client.destroy();
   if (healthServer) {
     healthServer.close(() => process.exit(0));

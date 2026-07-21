@@ -1,22 +1,10 @@
+import { MessageFlags } from 'discord.js';
 import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  MessageFlags,
-  time,
-  TimestampStyles
-} from 'discord.js';
-import { ROLE, TIER_ROLES, VERIFIED_ROLE_ALIASES } from '../config/constants.js';
-
-const GIVEAWAY_ENTRY_ROLES = [
-  { role: TIER_ROLES[0].name, entries: 12 },
-  { role: TIER_ROLES[1].name, entries: 8 },
-  { role: TIER_ROLES[2].name, entries: 6 },
-  { role: TIER_ROLES[3].name, entries: 4 },
-  { role: TIER_ROLES[4].name, entries: 2 },
-  { role: ROLE.client, entries: 1 },
-  ...VERIFIED_ROLE_ALIASES.map((role) => ({ role, entries: 1 }))
-];
+  createGiveawayPresentationService,
+  giveawayEntriesForMember,
+  parseGiveawayDurationMs,
+  pickWeightedWinners
+} from './giveaway-presentation-service.js';
 
 let giveawaySchemaWarningShown = false;
 
@@ -38,63 +26,6 @@ function warnMissingGiveawaySchemaOnce(error) {
   console.warn(`${missingGiveawaySchemaMessage()} Detail: ${error.message}`);
 }
 
-function parseDurationMs(value) {
-  const match = String(value || '').trim().toLowerCase().match(/^(\d+)\s*(m|h|d)$/);
-  if (!match) return null;
-
-  const amount = Number(match[1]);
-  if (!Number.isSafeInteger(amount) || amount <= 0) return null;
-  const unit = match[2];
-  const multipliers = {
-    m: 60_000,
-    h: 60 * 60_000,
-    d: 24 * 60 * 60_000
-  };
-
-  const duration = amount * multipliers[unit];
-  return duration <= 365 * 24 * 60 * 60_000 ? duration : null;
-}
-
-function giveawayEntriesForMember(member) {
-  for (const rule of GIVEAWAY_ENTRY_ROLES) {
-    if (member.roles.cache.some((role) => role.name === rule.role)) return rule.entries;
-  }
-
-  return 0;
-}
-
-function giveawayJoinRow(giveawayId, disabled = false) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`giveaway:join:${giveawayId}`)
-      .setLabel('Ikut Giveaway')
-      .setEmoji('🎉')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(disabled)
-  );
-}
-
-function pickWeightedWinners(entries, winnersCount) {
-  const candidates = [...entries];
-  const winners = [];
-  while (candidates.length && winners.length < winnersCount) {
-    const totalWeight = candidates.reduce((total, entry) => total + entry.entries, 0);
-    let target = Math.random() * totalWeight;
-    let pickedIndex = 0;
-    for (let index = 0; index < candidates.length; index += 1) {
-      target -= candidates[index].entries;
-      if (target < 0) {
-        pickedIndex = index;
-        break;
-      }
-    }
-    winners.push(candidates[pickedIndex]);
-    candidates.splice(pickedIndex, 1);
-  }
-
-  return winners;
-}
-
 export function createGiveawayFeature({
   client,
   supabase,
@@ -104,14 +35,7 @@ export function createGiveawayFeature({
   giveawayChannelName
 }) {
   const endingGiveaways = new Set();
-  function giveawayRulesText(guild) {
-    return GIVEAWAY_ENTRY_ROLES
-      .map((rule) => {
-        const role = guild.roles.cache.find((item) => item.name === rule.role);
-        return `• ${role ? `<@&${role.id}>` : rule.role} = ${rule.entries} ticket`;
-      })
-      .join('\n');
-  }
+  const { payload: giveawayPayload } = createGiveawayPresentationService({ embedBase });
 
   async function giveawayParticipantCount(giveawayId) {
     const { count, error } = await supabase
@@ -126,35 +50,6 @@ export function createGiveawayFeature({
     }
 
     return count || 0;
-  }
-
-  function giveawayPayload(guild, giveaway, participantCount, winners = []) {
-    const ended = giveaway.status === 'ended';
-    const endsAt = new Date(giveaway.ends_at);
-    const winnerText = winners.length ? winners.map((winner) => `<@${winner.user_id}>`).join(', ') : 'Belum diundi';
-
-    return {
-      embeds: [
-        embedBase()
-          .setTitle(giveaway.prize)
-          .setDescription([
-            `• Giveaway ID: ${giveaway.id}`,
-            `• Hosted by: <@${giveaway.host_id}>`,
-            `• Ended at: ${time(endsAt, TimestampStyles.ShortDateTime)} (${time(endsAt, TimestampStyles.RelativeTime)})`,
-            `• Winners: ${giveaway.winners_count}`,
-            '',
-            `• Participants: ${participantCount}`,
-            '',
-            '**Roles with entries:**',
-            giveawayRulesText(guild),
-            '',
-            ended
-              ? `⏰ Giveaway sudah selesai. Winner: ${winnerText}`
-              : 'Klik tombol di bawah untuk ikut giveaway.'
-          ].join('\n'))
-      ],
-      components: [giveawayJoinRow(giveaway.id, ended)]
-    };
   }
 
   async function refreshGiveawayMessage(guild, giveawayId) {
@@ -264,7 +159,7 @@ export function createGiveawayFeature({
     const prize = interaction.options.getString('prize', true);
     const durationInput = interaction.options.getString('duration', true);
     const winnersCount = interaction.options.getInteger('winners') || 1;
-    const durationMs = parseDurationMs(durationInput);
+    const durationMs = parseGiveawayDurationMs(durationInput);
 
     if (!durationMs) {
       await interaction.reply({ content: 'Durasi tidak valid. Contoh: 30m, 4h, 1d.', flags: MessageFlags.Ephemeral });
@@ -322,6 +217,7 @@ export function createGiveawayFeature({
       return;
     }
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const { data: giveaway, error } = await supabase
       .from('giveaways')
       .select('*')
@@ -331,14 +227,14 @@ export function createGiveawayFeature({
     if (error) {
       if (isGiveawaySchemaMissing(error)) {
         warnMissingGiveawaySchemaOnce(error);
-        await interaction.reply({ content: missingGiveawaySchemaMessage(), flags: MessageFlags.Ephemeral });
+        await interaction.editReply(missingGiveawaySchemaMessage());
         return;
       }
       throw error;
     }
 
     if (!giveaway || giveaway.status !== 'active' || new Date(giveaway.ends_at).getTime() <= Date.now()) {
-      await interaction.reply({ content: 'Giveaway ini sudah selesai.', flags: MessageFlags.Ephemeral });
+      await interaction.editReply('Giveaway ini sudah selesai.');
       if (giveaway?.status === 'active') await endGiveaway(interaction.guild, giveaway.id);
       return;
     }
@@ -355,17 +251,14 @@ export function createGiveawayFeature({
     if (entryError) {
       if (isGiveawaySchemaMissing(entryError)) {
         warnMissingGiveawaySchemaOnce(entryError);
-        await interaction.reply({ content: missingGiveawaySchemaMessage(), flags: MessageFlags.Ephemeral });
+        await interaction.editReply(missingGiveawaySchemaMessage());
         return;
       }
       throw entryError;
     }
 
     await refreshGiveawayMessage(interaction.guild, giveaway.id);
-    await interaction.reply({
-      content: `Kamu berhasil ikut giveaway dengan ${entries} ticket entry.`,
-      flags: MessageFlags.Ephemeral
-    });
+    await interaction.editReply(`Kamu berhasil ikut giveaway dengan ${entries} ticket entry.`);
   }
 
   async function handleGiveawayCommand(interaction) {

@@ -251,6 +251,14 @@ src/
 - `libs` berisi adapter database, waktu, dan health server.
 - `test/` berisi unit test status, routing, panel, dan concurrency ticket.
 
+Service dengan tanggung jawab khusus:
+
+- `bot-lifecycle-service.js`: startup task, scheduler berkala, overlap guard, dan penghentian timer.
+- `core-payload-service.js`: panel verifikasi, tombol kontrol ticket, dan payload QRIS.
+- `member-access-service.js`: aturan owner, staff, dan member terverifikasi.
+- `customer-service.js`: akumulasi total customer dan sinkronisasi tier role.
+- `giveaway-presentation-service.js`: parsing durasi, bobot entry, pemilihan winner, dan payload giveaway.
+
 ### 10.1 Buat GitHub repo
 
 Kalau GitHub CLI sudah login:

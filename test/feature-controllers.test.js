@@ -199,7 +199,8 @@ test('claiming a ticket records the event after the database update', async () =
     guild: { id: 'guild-1' },
     channelId: 'ticket-channel',
     user: { id: 'staff-1' },
-    async reply(payload) {
+    async deferReply() {},
+    async editReply(payload) {
       this.replyPayload = payload;
     }
   };

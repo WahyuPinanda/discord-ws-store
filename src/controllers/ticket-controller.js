@@ -95,12 +95,10 @@ export function createTicketController({
       return;
     }
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await member.roles.add(verifiedRole);
     if (unverifiedRole) await member.roles.remove(unverifiedRole);
-    await interaction.reply({
-      content: 'Verifikasi berhasil. Selamat datang di WS Store Official!',
-      flags: MessageFlags.Ephemeral
-    });
+    await interaction.editReply('Verifikasi berhasil. Selamat datang di WS Store Official!');
   }
 
   async function createTicket(interaction, type, service = null) {
@@ -232,7 +230,6 @@ export function createTicketController({
     const type = interaction.options.getString('type', true);
     const service = type === 'order' ? interaction.options.getString('service') : null;
     const selectedService = type === 'order' ? orderTicketService(service) : null;
-    const openerMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
     if (type === 'order' && service && !selectedService) {
       await interaction.reply({
@@ -241,12 +238,14 @@ export function createTicketController({
       });
       return;
     }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const openerMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
     if (!openerMember) {
-      await interaction.reply({ content: 'Member tidak ditemukan di server ini.', flags: MessageFlags.Ephemeral });
+      await interaction.editReply('Member tidak ditemukan di server ini.');
       return;
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await createTicketForMember(interaction, type, openerMember, {
       bypassStoreHours: true,
       openedByStaff: true,
@@ -267,13 +266,14 @@ export function createTicketController({
       return;
     }
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const ticket = unwrapSupabase(await supabase
       .from('tickets')
       .select('*')
       .eq('channel_id', interaction.channelId)
       .maybeSingle(), 'Failed to load ticket for claim');
     if (!ticket) {
-      await interaction.reply({ content: 'Data ticket tidak ditemukan di Supabase.', flags: MessageFlags.Ephemeral });
+      await interaction.editReply('Data ticket tidak ditemukan di Supabase.');
       return;
     }
 
@@ -281,7 +281,7 @@ export function createTicketController({
       .from('tickets')
       .update({ claimed_by: interaction.user.id, status: 'claimed' })
       .eq('id', ticket.id), 'Failed to claim ticket');
-    await interaction.reply({
+    await interaction.editReply({
       embeds: [
         embedBase()
           .setColor(0x2ecc71)

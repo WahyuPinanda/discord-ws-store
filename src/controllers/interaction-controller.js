@@ -109,7 +109,8 @@ export function createInteractionController({
         await createRekberTicket(interaction);
         return;
       }
-      if (interaction.customId.startsWith('ticket:complete-modal:')) {
+      if (interaction.customId === 'ticket:complete-modal'
+        || interaction.customId.startsWith('ticket:complete-modal:')) {
         await completeTicket(interaction);
       }
     }

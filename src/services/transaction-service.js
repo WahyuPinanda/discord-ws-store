@@ -5,6 +5,7 @@ import {
   TextInputBuilder,
   TextInputStyle
 } from 'discord.js';
+import { createCustomerService } from './customer-service.js';
 import { createTranscriptService } from './transcript-service.js';
 
 export function createTransactionService({
@@ -25,8 +26,14 @@ export function createTransactionService({
   logTicketEvent = async () => false,
   logger = console
 }) {
-  const ticketCompletionLocks = new Set();
-  const customerUpdateLocks = new Map();
+  const ticketMutationLocks = new Set();
+  const { updateCustomerAndRoles } = createCustomerService({
+    supabase,
+    customerRoleName,
+    tierRoles,
+    unwrapSupabase,
+    logger
+  });
   const { buildTranscript, sendTranscriptLog } = createTranscriptService({
     config,
     embedBase,
@@ -35,29 +42,14 @@ export function createTransactionService({
     ticketLogChannel
   });
 
-  function getTier(totalSpent) {
-    return tierRoles.find((tier) => totalSpent >= tier.min) || null;
-  }
-
   async function showCompleteModal(interaction) {
     if (!memberIsStaff(interaction.member)) {
       await interaction.reply({ content: 'Hanya staff yang bisa menyelesaikan order.', flags: MessageFlags.Ephemeral });
       return;
     }
 
-    const ticket = unwrapSupabase(await supabase
-      .from('tickets')
-      .select('*')
-      .eq('channel_id', interaction.channelId)
-      .maybeSingle(), 'Failed to load ticket completion form');
-
-    if (!ticket) {
-      await interaction.reply({ content: 'Data ticket tidak ditemukan.', flags: MessageFlags.Ephemeral });
-      return;
-    }
-
     const modal = new ModalBuilder()
-      .setCustomId(`ticket:complete-modal:${ticket.id}`)
+      .setCustomId('ticket:complete-modal')
       .setTitle('Selesaikan Order')
       .addComponents(
         new ActionRowBuilder().addComponents(
@@ -66,6 +58,7 @@ export function createTransactionService({
             .setLabel('Produk')
             .setPlaceholder('Contoh: 1500 Robux Group Payout')
             .setStyle(TextInputStyle.Short)
+            .setMaxLength(100)
             .setRequired(true)
         ),
         new ActionRowBuilder().addComponents(
@@ -74,6 +67,7 @@ export function createTransactionService({
             .setLabel('Nominal Rupiah')
             .setPlaceholder('Contoh: 1250000')
             .setStyle(TextInputStyle.Short)
+            .setMaxLength(20)
             .setRequired(true)
         ),
         new ActionRowBuilder().addComponents(
@@ -82,6 +76,7 @@ export function createTransactionService({
             .setLabel('Payment')
             .setPlaceholder('QRIS / BCA / DANA')
             .setStyle(TextInputStyle.Short)
+            .setMaxLength(50)
             .setRequired(true)
         ),
         new ActionRowBuilder().addComponents(
@@ -90,90 +85,12 @@ export function createTransactionService({
             .setLabel('Catatan')
             .setPlaceholder('Opsional')
             .setStyle(TextInputStyle.Paragraph)
+            .setMaxLength(1000)
             .setRequired(false)
         )
       );
 
     await interaction.showModal(modal);
-  }
-
-  async function updateCustomerAndRolesUnlocked(guild, buyerId, buyerTag, amount) {
-    let totalSpent = 0;
-    let tier = null;
-    let saved = false;
-
-    for (let attempt = 0; attempt < 5 && !saved; attempt += 1) {
-      const oldCustomer = unwrapSupabase(await supabase
-        .from('customers')
-        .select('*')
-        .eq('discord_user_id', buyerId)
-        .maybeSingle(), 'Failed to load customer total');
-      const previousTotal = Number(oldCustomer?.total_spent || 0);
-      totalSpent = previousTotal + Number(amount || 0);
-      tier = getTier(totalSpent);
-      const customer = {
-        discord_user_id: buyerId,
-        username: buyerTag,
-        total_spent: totalSpent,
-        tier: tier?.name || null
-      };
-
-      if (!oldCustomer) {
-        const { error } = await supabase.from('customers').insert(customer);
-        if (!error) {
-          saved = true;
-        } else if (error.code !== '23505') {
-          throw error;
-        }
-        continue;
-      }
-
-      const updated = unwrapSupabase(await supabase
-        .from('customers')
-        .update(customer)
-        .eq('discord_user_id', buyerId)
-        .eq('total_spent', previousTotal)
-        .select('discord_user_id')
-        .maybeSingle(), 'Failed to update customer total');
-      saved = Boolean(updated);
-    }
-
-    if (!saved) {
-      throw new Error(`Customer total update conflicted repeatedly for ${buyerId}`);
-    }
-
-    const member = await guild.members.fetch(buyerId).catch(() => null);
-    if (member) {
-      const customerRole = guild.roles.cache.find((role) => role.name === customerRoleName);
-      if (customerRole) await member.roles.add(customerRole).catch(() => null);
-
-      const tierRoleIds = tierRoles
-        .flatMap((item) => [item.name, ...(item.aliases || [])])
-        .map((roleName) => guild.roles.cache.find((role) => role.name === roleName)?.id)
-        .filter(Boolean);
-
-      if (tierRoleIds.length) await member.roles.remove(tierRoleIds).catch(() => null);
-      if (tier) {
-        const tierRole = guild.roles.cache.find((role) => role.name === tier.name);
-        if (tierRole) await member.roles.add(tierRole).catch(() => null);
-      }
-    }
-
-    return { totalSpent, tier };
-  }
-
-  async function updateCustomerAndRoles(guild, buyerId, buyerTag, amount) {
-    const previous = customerUpdateLocks.get(buyerId) || Promise.resolve();
-    const update = previous
-      .catch(() => null)
-      .then(() => updateCustomerAndRolesUnlocked(guild, buyerId, buyerTag, amount));
-    customerUpdateLocks.set(buyerId, update);
-
-    try {
-      return await update;
-    } finally {
-      if (customerUpdateLocks.get(buyerId) === update) customerUpdateLocks.delete(buyerId);
-    }
   }
 
   async function sendInvoiceDm({ user, transaction, totalSpent, tier }) {
@@ -247,15 +164,19 @@ export function createTransactionService({
     return transcript;
   }
 
-  async function completeTicketUnlocked(interaction, ticketId) {
-    const product = interaction.fields.getTextInputValue('product');
+  async function completeTicketUnlocked(interaction) {
+    const product = interaction.fields.getTextInputValue('product').trim();
     const amountRaw = interaction.fields.getTextInputValue('amount');
-    const paymentMethod = interaction.fields.getTextInputValue('payment');
-    const note = interaction.fields.getTextInputValue('note') || null;
+    const paymentMethod = interaction.fields.getTextInputValue('payment').trim();
+    const note = interaction.fields.getTextInputValue('note').trim() || null;
     const amount = Number(amountRaw.replace(/[^\d]/g, ''));
 
-    if (!amount || Number.isNaN(amount)) {
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
       await interaction.reply({ content: 'Nominal tidak valid. Isi angka rupiah, contoh: 1250000.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (!product || !paymentMethod) {
+      await interaction.reply({ content: 'Produk dan metode pembayaran wajib diisi.', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -263,7 +184,7 @@ export function createTransactionService({
     const ticket = unwrapSupabase(await supabase
       .from('tickets')
       .select('*')
-      .eq('id', ticketId)
+      .eq('channel_id', interaction.channelId)
       .maybeSingle(), 'Failed to load ticket completion');
 
     if (!ticket) {
@@ -354,20 +275,25 @@ export function createTransactionService({
   }
 
   async function completeTicket(interaction) {
-    const ticketId = interaction.customId.split(':').at(-1);
-    if (ticketCompletionLocks.has(ticketId)) {
+    if (!memberIsStaff(interaction.member)) {
+      await interaction.reply({ content: 'Hanya staff yang bisa menyelesaikan order.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const lockKey = interaction.channelId;
+    if (ticketMutationLocks.has(lockKey)) {
       await interaction.reply({
-        content: 'Penyelesaian ticket ini sedang diproses. Mohon tunggu.',
+        content: 'Perubahan ticket ini sedang diproses. Mohon tunggu.',
         flags: MessageFlags.Ephemeral
       });
       return;
     }
 
-    ticketCompletionLocks.add(ticketId);
+    ticketMutationLocks.add(lockKey);
     try {
-      await completeTicketUnlocked(interaction, ticketId);
+      await completeTicketUnlocked(interaction);
     } finally {
-      ticketCompletionLocks.delete(ticketId);
+      ticketMutationLocks.delete(lockKey);
     }
   }
 
@@ -377,28 +303,42 @@ export function createTransactionService({
       return;
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const ticket = unwrapSupabase(await supabase
-      .from('tickets')
-      .select('*')
-      .eq('channel_id', interaction.channelId)
-      .maybeSingle(), 'Failed to load ticket for closing');
-
-    if (!ticket) {
-      await interaction.editReply('Ticket tidak ditemukan di database.');
+    const lockKey = interaction.channelId;
+    if (ticketMutationLocks.has(lockKey)) {
+      await interaction.reply({
+        content: 'Perubahan ticket ini sedang diproses. Mohon tunggu.',
+        flags: MessageFlags.Ephemeral
+      });
       return;
     }
 
-    await closeTicketChannel(interaction.channel, ticket, interaction.user.id);
-    await interaction.editReply('Ticket ditutup dan transcript dikirim.');
-    await logTicketEvent(interaction.guild, {
-      event: 'Ticket Closed',
-      ticketId: ticket.id,
-      channelId: interaction.channelId,
-      openerId: ticket.opener_id,
-      actorId: interaction.user.id,
-      type: ticket.type
-    });
+    ticketMutationLocks.add(lockKey);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const ticket = unwrapSupabase(await supabase
+        .from('tickets')
+        .select('*')
+        .eq('channel_id', interaction.channelId)
+        .maybeSingle(), 'Failed to load ticket for closing');
+
+      if (!ticket) {
+        await interaction.editReply('Ticket tidak ditemukan di database.');
+        return;
+      }
+
+      await closeTicketChannel(interaction.channel, ticket, interaction.user.id);
+      await interaction.editReply('Ticket ditutup dan transcript dikirim.');
+      await logTicketEvent(interaction.guild, {
+        event: 'Ticket Closed',
+        ticketId: ticket.id,
+        channelId: interaction.channelId,
+        openerId: ticket.opener_id,
+        actorId: interaction.user.id,
+        type: ticket.type
+      });
+    } finally {
+      ticketMutationLocks.delete(lockKey);
+    }
   }
 
   async function addManualTransaction(interaction) {
@@ -457,13 +397,14 @@ export function createTransactionService({
       return;
     }
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const data = unwrapSupabase(await supabase
       .from('customers')
       .select('*')
       .eq('discord_user_id', user.id)
       .maybeSingle(), 'Failed to load customer profile');
 
-    await interaction.reply({
+    await interaction.editReply({
       embeds: [
         embedBase()
           .setTitle('🛒 Customer Profile')
@@ -472,8 +413,7 @@ export function createTransactionService({
             { name: 'Total Belanja', value: formatRupiah(data?.total_spent || 0), inline: true },
             { name: 'Tier', value: data?.tier || 'Belum ada tier', inline: true }
           )
-      ],
-      flags: MessageFlags.Ephemeral
+      ]
     });
   }
 
