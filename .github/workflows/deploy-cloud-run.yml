@@ -13,7 +13,30 @@ env:
   GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || secrets.GCP_PROJECT_ID }}
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check JavaScript syntax
+        run: find src test -type f -name '*.js' -exec node --check {} \;
+
   deploy:
+    needs: validate
     runs-on: ubuntu-latest
 
     permissions:
@@ -57,7 +80,8 @@ jobs:
             DISCORD_GUILD_ID=${{ vars.DISCORD_GUILD_ID || secrets.DISCORD_GUILD_ID }}
             OWNER_DISCORD_ID=${{ vars.OWNER_DISCORD_ID || secrets.OWNER_DISCORD_ID }}
             STORE_NAME=WS Store Official
-            STORE_TIMEZONE=Asia/Makassar
+            STORE_TIMEZONE=Asia/Jakarta
+            STORE_TIMEZONE_LABEL=WIB
             STORE_OPEN_HOUR=10
             STORE_CLOSE_HOUR=22
             QRIS_IMAGE_PATH=assets/qris-ws-store.png
