@@ -169,6 +169,7 @@ Penting: heartbeat hanya berjalan kalau bot hidup. Kalau bot dimatikan, VPS mati
 ```
 
 `/add-transaction` berguna untuk transaksi manual di luar ticket.
+`/customer user:@user` menampilkan total transaksi sekaligus menyinkronkan ulang role Customer/tier tanpa menambah nominal.
 `/open-ticket` berguna untuk staff membuka ticket member tertentu, termasuk di luar jam operasional.
 `/set-panel-text` menyimpan teks panel market/pricelist ke Supabase, jadi perubahan harga tidak perlu edit kode.
 

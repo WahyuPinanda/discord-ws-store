@@ -27,7 +27,7 @@ export function createTransactionService({
   logger = console
 }) {
   const ticketMutationLocks = new Set();
-  const { updateCustomerAndRoles } = createCustomerService({
+  const { syncCustomerRoles, updateCustomerAndRoles } = createCustomerService({
     supabase,
     customerRoleName,
     tierRoles,
@@ -223,7 +223,7 @@ export function createTransactionService({
       throw error;
     }
 
-    const { totalSpent, tier } = await updateCustomerAndRoles(
+    const { totalSpent, tier, roleSync } = await updateCustomerAndRoles(
       interaction.guild,
       ticket.opener_id,
       buyer.tag,
@@ -269,7 +269,10 @@ export function createTransactionService({
       })
     ]);
 
-    await interaction.editReply('Order selesai, invoice DM terkirim jika DM pembeli terbuka, dan ticket akan ditutup.');
+    const roleWarning = roleSync.ok
+      ? ''
+      : ` Peringatan: transaksi tersimpan, tetapi role Customer gagal disinkronkan (${roleSync.error}).`;
+    await interaction.editReply(`Order selesai, invoice DM terkirim jika DM pembeli terbuka, dan ticket akan ditutup.${roleWarning}`);
     await interaction.channel.send('Ticket akan ditutup dalam 8 detik.');
     setTimeout(() => interaction.channel.delete('Order completed by WS Store bot').catch(() => null), 8000);
   }
@@ -370,10 +373,11 @@ export function createTransactionService({
       .select('*')
       .single(), 'Failed to save manual transaction');
 
-    const { totalSpent, tier } = await updateCustomerAndRoles(interaction.guild, buyer.id, buyer.tag, amount);
+    const { totalSpent, tier, roleSync } = await updateCustomerAndRoles(interaction.guild, buyer.id, buyer.tag, amount);
     await postTransaction(interaction.guild, transaction, buyer.id, totalSpent, tier);
     await sendInvoiceDm({ user: buyer, transaction, totalSpent, tier });
-    await interaction.editReply(`Transaksi manual berhasil. Total ${buyer.tag}: ${formatRupiah(totalSpent)} (${tier?.name || 'Customer'}).`);
+    const roleWarning = roleSync.ok ? '' : ` Role gagal disinkronkan: ${roleSync.error}.`;
+    await interaction.editReply(`Transaksi manual berhasil. Total ${buyer.tag}: ${formatRupiah(totalSpent)} (${tier?.name || 'Customer'}).${roleWarning}`);
     await logOrderEvent(interaction.guild, {
       transactionId: transaction.id,
       buyerId: buyer.id,
@@ -403,6 +407,9 @@ export function createTransactionService({
       .select('*')
       .eq('discord_user_id', user.id)
       .maybeSingle(), 'Failed to load customer profile');
+    const roleSync = data
+      ? await syncCustomerRoles(interaction.guild, user.id, data.total_spent)
+      : null;
 
     await interaction.editReply({
       embeds: [
@@ -411,7 +418,14 @@ export function createTransactionService({
           .addFields(
             { name: 'User', value: `<@${user.id}>`, inline: true },
             { name: 'Total Belanja', value: formatRupiah(data?.total_spent || 0), inline: true },
-            { name: 'Tier', value: data?.tier || 'Belum ada tier', inline: true }
+            { name: 'Tier', value: data?.tier || 'Belum ada tier', inline: true },
+            {
+              name: 'Role Customer',
+              value: !data ? 'Belum ada transaksi'
+                : roleSync.ok ? 'Tersinkronisasi'
+                  : `Gagal: ${roleSync.error}`,
+              inline: false
+            }
           )
       ]
     });

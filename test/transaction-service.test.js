@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { EmbedBuilder } from 'discord.js';
 
 import { createTransactionService } from '../src/services/transaction-service.js';
 
@@ -68,4 +69,50 @@ test('completion form submission rechecks staff permission', async () => {
   await service.completeTicket(interaction);
 
   assert.match(interaction.payload.content, /Hanya staff/);
+});
+
+test('customer profile repairs the customer role without changing the stored total', async () => {
+  const roleActions = [];
+  const roles = [{ id: 'customer-role', name: 'Customer', editable: true }];
+  roles.find = Array.prototype.find.bind(roles);
+  const service = createService({
+    supabase: {
+      from(table) {
+        assert.equal(table, 'customers');
+        return {
+          select() { return this; },
+          eq() { return this; },
+          async maybeSingle() {
+            return { data: { discord_user_id: 'buyer-1', total_spent: 255_000, tier: null }, error: null };
+          }
+        };
+      }
+    },
+    embedBase: () => new EmbedBuilder(),
+    formatRupiah: (amount) => `Rp${amount}`
+  });
+  const interaction = {
+    user: { id: 'buyer-1' },
+    member: {},
+    options: { getUser: () => ({ id: 'buyer-1' }) },
+    guild: {
+      members: {
+        fetch: async () => ({
+          roles: {
+            cache: new Map(),
+            add: async (role) => roleActions.push(['add', role.id]),
+            remove: async () => assert.fail('no tier role should be removed')
+          }
+        })
+      },
+      roles: { cache: roles, fetch: async () => roles }
+    },
+    async deferReply() {},
+    async editReply(payload) { this.payload = payload; }
+  };
+
+  await service.showCustomer(interaction);
+
+  assert.deepEqual(roleActions, [['add', 'customer-role']]);
+  assert.match(interaction.payload.embeds[0].data.fields.at(-1).value, /Tersinkronisasi/);
 });
