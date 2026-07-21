@@ -18,6 +18,7 @@ import { withInteractionErrorHandling } from './middlewares/interaction-error-ha
 import { registerDiscordEventRoutes } from './routes/discord-event-routes.js';
 import { createAntiSpamFeature } from './services/anti-spam-service.js';
 import { createAuditLogService } from './services/audit-log-service.js';
+import { createBoosterRoleService } from './services/booster-role-service.js';
 import { createBotLifecycleService } from './services/bot-lifecycle-service.js';
 import { createCorePayloadService } from './services/core-payload-service.js';
 import { channelMatchesName } from './services/discord-resource-service.js';
@@ -305,6 +306,10 @@ const {
   welcomeChannelName: CHANNEL.welcome
 });
 
+const { handleGuildMemberUpdate: handleBoosterRoleMemberUpdate } = createBoosterRoleService({
+  boosterRoleName: ROLE.booster
+});
+
 const {
   ensureNotifyMeChannelAccess,
   handleIntegrationMemberAdd,
@@ -320,6 +325,10 @@ const {
 async function handleGuildMemberAdd(member) {
   await handleIntegrationMemberAdd(member);
   await handleInviteTrackerMemberAdd(member);
+}
+
+async function handleGuildMemberUpdate(oldMember, newMember) {
+  await handleBoosterRoleMemberUpdate(oldMember, newMember);
 }
 
 const handleInteraction = withInteractionErrorHandling(createInteractionController({
@@ -350,6 +359,7 @@ registerDiscordEventRoutes({
   client,
   handleMessageCreate,
   handleGuildMemberAdd,
+  handleGuildMemberUpdate,
   handleInviteCreate,
   handleInviteDelete,
   handleInteraction
