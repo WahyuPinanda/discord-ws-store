@@ -8,6 +8,13 @@ import {
 
 const OPEN_HOUR = 10;
 const CLOSE_HOUR = 22;
+const ORDER_SERVICES = [
+  'gift-gamepass',
+  'group-payout',
+  'via-login',
+  'via-username',
+  'limited'
+];
 
 function getUtcHour(date) {
   return date.getUTCHours();
@@ -58,8 +65,7 @@ function createFeature(rows) {
     supabase: createSupabaseStub(rows),
     definitions: {
       order: {},
-      limited: {},
-      'via-username': {}
+      ...Object.fromEntries(ORDER_SERVICES.map((service) => [service, {}]))
     },
     openHour: OPEN_HOUR,
     closeHour: CLOSE_HOUR,
@@ -130,6 +136,49 @@ test('manual open outside hours falls back to the automatic schedule', async () 
     guildId,
     'order',
     new Date('2026-07-12T22:00:00.000Z')
+  ), false);
+});
+
+for (const service of ORDER_SERVICES) {
+  test(`manual ${service} open enables its order button outside operating hours`, async () => {
+    const guildId = `guild-${service}-open`;
+    const feature = createFeature([
+      { guild_id: guildId, service, is_open: true, updated_at: '2026-07-12T01:00:00.000Z' }
+    ]);
+    await feature.loadServiceStatuses(guildId);
+
+    const beforeOpening = new Date('2026-07-12T09:59:00.000Z');
+    assert.equal(feature.ticketServiceIsAvailable(guildId, 'order', beforeOpening), false);
+    assert.equal(feature.orderTicketServiceIsAvailable(guildId, service, beforeOpening), true);
+  });
+}
+
+test('manual service close keeps its order button disabled outside operating hours', async () => {
+  const guildId = 'guild-service-closed';
+  const feature = createFeature([
+    { guild_id: guildId, service: 'via-username', is_open: false, updated_at: '2026-07-12T01:00:00.000Z' }
+  ]);
+  await feature.loadServiceStatuses(guildId);
+
+  assert.equal(feature.orderTicketServiceIsAvailable(
+    guildId,
+    'via-username',
+    new Date('2026-07-12T09:59:00.000Z')
+  ), false);
+});
+
+test('manual order close blocks a manually opened order service', async () => {
+  const guildId = 'guild-order-closed';
+  const feature = createFeature([
+    { guild_id: guildId, service: 'order', is_open: false, updated_at: '2026-07-12T01:00:00.000Z' },
+    { guild_id: guildId, service: 'limited', is_open: true, updated_at: '2026-07-12T01:30:00.000Z' }
+  ]);
+  await feature.loadServiceStatuses(guildId);
+
+  assert.equal(feature.orderTicketServiceIsAvailable(
+    guildId,
+    'limited',
+    new Date('2026-07-12T09:59:00.000Z')
   ), false);
 });
 
