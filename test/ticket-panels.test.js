@@ -11,7 +11,7 @@ const services = [
   { service: 'limited', label: 'Limited Item', emoji: '💎', description: 'Limited.' }
 ];
 
-test('order panel uses effective gate status and raw service statuses', () => {
+test('order panel uses the same effective status for text and buttons', () => {
   const openServices = new Set(['gift-gamepass', 'via-login', 'limited']);
   const feature = createTicketPanelFeature({
     config: {
@@ -65,8 +65,11 @@ test('closed order gate disables every service button', () => {
   });
 
   const payload = feature.ticketPanelPayload('order');
+  const description = payload.embeds[0].data.description;
   const buttons = payload.components.flatMap((row) => row.components);
 
   assert.equal(payload.embeds[0].data.description.includes('Gerbang Ticket Order'), false);
+  assert.match(description, /Gamepass & GIG[\s\S]*Status: CLOSED/);
+  assert.match(description, /Limited Item[\s\S]*Status: CLOSED/);
   assert.equal(buttons.every((button) => button.data.disabled), true);
 });

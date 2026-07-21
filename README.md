@@ -133,6 +133,9 @@ Di luar jam ini:
 
 - gerbang ticket order dan support otomatis closed
 - `/open order` dapat membuka gerbang order sementara sampai batas jadwal berikutnya
+- `/open gift-gamepass`, `/open group-payout`, `/open via-login`, `/open via-username`, dan `/open limited` dapat membuka tombol layanan terkait secara manual
+- `/close order` menutup seluruh tombol order; layanan tertentu dapat dibuka kembali dengan `/open <layanan>` setelahnya
+- jika `/close order` dijalankan setelah `/open <layanan>`, tombol layanan tersebut ikut ditutup
 - tombol Gamepass & GIG, Payout Instant, VILOG, Via Username, dan Limited Item tetap mengikuti SERVER STATS masing-masing
 - kalau ada tombol lama yang masih bisa diklik, bot tetap menolak pembuatan ticket
 - ticket rekber tetap bisa dibuka, tetapi proses dibantu selagi admin / middleman sedang online
@@ -142,7 +145,9 @@ Panel ticket diperiksa otomatis setiap 1 menit dan hanya diedit ketika status be
 Contoh perilaku override:
 
 - `/open order` pukul 23.00 membuka order sampai pukul 10.00, lalu jadwal normal mengambil alih
+- `/open via-login` pukul 23.00 membuka tombol VILOG sampai pukul 10.00 tanpa membuka layanan lain
 - `/close order` pukul 01.00 menutup order sampai pukul 10.00, lalu order terbuka otomatis
+- `/close order` pukul 01.00 lalu `/open group-payout` pukul 05.00 hanya membuka tombol Payout Instant
 - pada pukul 22.00 gerbang order kembali closed otomatis
 
 ## 7. Supabase Free Keep Alive

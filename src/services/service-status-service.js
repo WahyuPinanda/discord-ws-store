@@ -58,10 +58,10 @@ export function createServiceStatusFeature({
     return cache.get(serviceCacheKey(guildId, normalized))?.isOpen ?? loadedGuilds.has(guildId);
   }
 
-  function serviceStatusIsSet(guildId, service, date = new Date()) {
+  function activeServiceOverride(guildId, service, date = new Date()) {
     const normalized = normalizeServiceName(service);
     const cached = cache.get(serviceCacheKey(guildId, normalized));
-    return manualOverrideIsActive({
+    const isActive = manualOverrideIsActive({
       updatedAt: cached?.updatedAt,
       date,
       openHour,
@@ -69,6 +69,12 @@ export function createServiceStatusFeature({
       getDateKey,
       getHour
     });
+
+    return isActive ? cached : null;
+  }
+
+  function serviceStatusIsSet(guildId, service, date = new Date()) {
+    return activeServiceOverride(guildId, service, date) !== null;
   }
 
   function ticketServiceIsAvailable(guildId, type, date = new Date()) {
@@ -78,14 +84,20 @@ export function createServiceStatusFeature({
   }
 
   function orderTicketServiceIsAvailable(guildId, service, date = new Date()) {
-    const orderOverrideIsActive = serviceStatusIsSet(guildId, 'order', date);
-    const serviceOverrideIsActive = serviceStatusIsSet(guildId, service, date);
+    const orderOverride = activeServiceOverride(guildId, 'order', date);
+    const serviceOverride = activeServiceOverride(guildId, service, date);
 
-    // An explicit order close is the master switch for every order service.
-    if (orderOverrideIsActive && !serviceIsOpen(guildId, 'order')) return false;
+    if (orderOverride && !orderOverride.isOpen) {
+      const orderUpdatedAt = new Date(orderOverride.updatedAt).getTime();
+      const serviceUpdatedAt = serviceOverride
+        ? new Date(serviceOverride.updatedAt).getTime()
+        : Number.NEGATIVE_INFINITY;
 
-    // Opening one service manually must work outside normal operating hours.
-    if (serviceOverrideIsActive) return serviceIsOpen(guildId, service);
+      // The latest explicit command wins between the order gate and its service.
+      if (orderUpdatedAt >= serviceUpdatedAt) return false;
+    }
+
+    if (serviceOverride) return serviceOverride.isOpen;
 
     return ticketServiceIsAvailable(guildId, 'order', date)
       && serviceIsOpen(guildId, service);

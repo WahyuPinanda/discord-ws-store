@@ -31,7 +31,7 @@ export function createTicketPanelFeature({
   }
 
   function serviceStatusText(service) {
-    return serviceIsOpen(config.guildId, service)
+    return orderTicketServiceIsAvailable(config.guildId, service)
       ? 'OPEN | Mengikuti server stats.'
       : 'CLOSED | Mengikuti server stats.';
   }
