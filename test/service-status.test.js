@@ -140,9 +140,10 @@ test('manual open outside hours falls back to the automatic schedule', async () 
 });
 
 for (const service of ORDER_SERVICES) {
-  test(`manual ${service} open enables its order button outside operating hours`, async () => {
+  test(`manual ${service} open overrides an earlier order close outside hours`, async () => {
     const guildId = `guild-${service}-open`;
     const feature = createFeature([
+      { guild_id: guildId, service: 'order', is_open: false, updated_at: '2026-07-12T00:30:00.000Z' },
       { guild_id: guildId, service, is_open: true, updated_at: '2026-07-12T01:00:00.000Z' }
     ]);
     await feature.loadServiceStatuses(guildId);
@@ -167,11 +168,26 @@ test('manual service close keeps its order button disabled outside operating hou
   ), false);
 });
 
-test('manual order close blocks a manually opened order service', async () => {
+test('a service opened after order was closed can open outside hours', async () => {
   const guildId = 'guild-order-closed';
   const feature = createFeature([
     { guild_id: guildId, service: 'order', is_open: false, updated_at: '2026-07-12T01:00:00.000Z' },
     { guild_id: guildId, service: 'limited', is_open: true, updated_at: '2026-07-12T01:30:00.000Z' }
+  ]);
+  await feature.loadServiceStatuses(guildId);
+
+  assert.equal(feature.orderTicketServiceIsAvailable(
+    guildId,
+    'limited',
+    new Date('2026-07-12T09:59:00.000Z')
+  ), true);
+});
+
+test('an order close issued after a service open blocks the service', async () => {
+  const guildId = 'guild-order-closed-last';
+  const feature = createFeature([
+    { guild_id: guildId, service: 'limited', is_open: true, updated_at: '2026-07-12T01:00:00.000Z' },
+    { guild_id: guildId, service: 'order', is_open: false, updated_at: '2026-07-12T01:30:00.000Z' }
   ]);
   await feature.loadServiceStatuses(guildId);
 
