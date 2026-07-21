@@ -35,26 +35,27 @@ test('customer service records the total and synchronizes customer tier roles', 
   const db = createCustomerDb();
   const roleActions = [];
   const roles = [
-    { id: 'customer-role', name: 'Customer' },
+    { id: 'customer-role', name: '🛒 Customer' },
     { id: 'loyal-role', name: 'Loyal' }
   ];
   roles.find = Array.prototype.find.bind(roles);
   const member = {
     roles: {
+      cache: new Map(),
       add: async (role) => roleActions.push(['add', role.id]),
       remove: async (ids) => roleActions.push(['remove', ids])
     }
   };
   const service = createCustomerService({
     supabase: db,
-    customerRoleName: 'Customer',
+    customerRoleName: '🛒 Customer',
     tierRoles: [{ min: 1_000_000, name: 'Loyal', aliases: [] }],
     unwrapSupabase: (result) => result.data,
     logger: { warn() {} }
   });
   const guild = {
     members: { fetch: async () => member },
-    roles: { cache: roles }
+    roles: { cache: roles, fetch: async () => roles }
   };
 
   const result = await service.updateCustomerAndRoles(guild, 'buyer-1', 'buyer', 1_500_000);
@@ -64,9 +65,34 @@ test('customer service records the total and synchronizes customer tier roles', 
   assert.equal(db.customer.total_spent, 1_500_000);
   assert.deepEqual(roleActions, [
     ['add', 'customer-role'],
-    ['remove', ['loyal-role']],
     ['add', 'loyal-role']
   ]);
+  assert.equal(result.roleSync.ok, true);
+});
+
+test('customer role sync reports an unmanageable role instead of hiding the failure', async () => {
+  const warnings = [];
+  const roles = [{ id: 'customer-role', name: 'Customer', editable: false }];
+  roles.find = Array.prototype.find.bind(roles);
+  const service = createCustomerService({
+    supabase: {},
+    customerRoleName: 'Customer',
+    tierRoles: [],
+    unwrapSupabase: (result) => result.data,
+    logger: { warn: (...args) => warnings.push(args.join(' ')) }
+  });
+  const guild = {
+    members: {
+      fetch: async () => ({ roles: { cache: new Map(), add: async () => assert.fail('role must not be added') } })
+    },
+    roles: { cache: roles, fetch: async () => roles }
+  };
+
+  const result = await service.syncCustomerRoles(guild, 'buyer-2', 255_000);
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /di atas role bot|integrasi/);
+  assert.equal(warnings.length > 0, true);
 });
 
 test('customer tier selection always chooses the highest matching threshold', () => {

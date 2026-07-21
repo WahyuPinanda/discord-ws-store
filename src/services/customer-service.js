@@ -7,6 +7,19 @@ export function createCustomerService({
 }) {
   const updateLocks = new Map();
 
+  function roleNameKey(value) {
+    return String(value || '')
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function findRole(guild, names) {
+    const expectedNames = new Set(names.map(roleNameKey));
+    return guild.roles.cache.find((role) => expectedNames.has(roleNameKey(role.name))) || null;
+  }
+
   function getTier(totalSpent) {
     return tierRoles.reduce((best, tier) => {
       if (totalSpent < tier.min) return best;
@@ -53,31 +66,49 @@ export function createCustomerService({
 
   async function syncMemberRoles(guild, buyerId, tier) {
     const member = await guild.members.fetch(buyerId).catch(() => null);
-    if (!member) return;
+    if (!member) {
+      const error = `Member ${buyerId} tidak ditemukan di server`;
+      logger.warn(`Customer role sync failed for ${buyerId}:`, error);
+      return { ok: false, error };
+    }
 
     try {
-      const customerRole = guild.roles.cache.find((role) => role.name === customerRoleName);
-      if (customerRole) await member.roles.add(customerRole);
+      await guild.roles.fetch?.().catch((error) => {
+        logger.warn('Failed to refresh Discord roles before customer sync:', error.message);
+      });
+
+      const customerRole = findRole(guild, [customerRoleName, 'Customer']);
+      if (!customerRole) throw new Error(`Role ${customerRoleName} tidak ditemukan`);
+      if (customerRole.editable === false) {
+        throw new Error(`Role ${customerRole.name} berada di atas role bot atau dikelola integrasi`);
+      }
+      await member.roles.add(customerRole, 'WS Store transaction recorded');
 
       const tierRoleIds = tierRoles
-        .flatMap((item) => [item.name, ...(item.aliases || [])])
-        .map((roleName) => guild.roles.cache.find((role) => role.name === roleName)?.id)
-        .filter(Boolean);
+        .map((item) => findRole(guild, [item.name, ...(item.aliases || [])]))
+        .filter((role) => role && member.roles.cache?.has?.(role.id))
+        .map((role) => role.id);
 
       if (tierRoleIds.length) await member.roles.remove(tierRoleIds);
       if (tier) {
-        const tierRole = guild.roles.cache.find((role) => role.name === tier.name);
-        if (tierRole) await member.roles.add(tierRole);
+        const tierRole = findRole(guild, [tier.name, ...(tier.aliases || [])]);
+        if (!tierRole) throw new Error(`Role tier ${tier.name} tidak ditemukan`);
+        if (tierRole.editable === false) {
+          throw new Error(`Role tier ${tierRole.name} berada di atas role bot atau dikelola integrasi`);
+        }
+        await member.roles.add(tierRole, 'WS Store customer tier updated');
       }
+      return { ok: true, error: null };
     } catch (error) {
       logger.warn(`Customer role sync failed for ${buyerId}:`, error.message);
+      return { ok: false, error: error.message };
     }
   }
 
   async function updateCustomerAndRolesUnlocked(guild, buyerId, buyerTag, amount) {
     const result = await saveCustomerTotal(buyerId, buyerTag, amount);
-    await syncMemberRoles(guild, buyerId, result.tier);
-    return result;
+    const roleSync = await syncMemberRoles(guild, buyerId, result.tier);
+    return { ...result, roleSync };
   }
 
   async function updateCustomerAndRoles(guild, buyerId, buyerTag, amount) {
@@ -94,5 +125,9 @@ export function createCustomerService({
     }
   }
 
-  return { getTier, updateCustomerAndRoles };
+  async function syncCustomerRoles(guild, buyerId, totalSpent) {
+    return syncMemberRoles(guild, buyerId, getTier(Number(totalSpent || 0)));
+  }
+
+  return { getTier, syncCustomerRoles, updateCustomerAndRoles };
 }
