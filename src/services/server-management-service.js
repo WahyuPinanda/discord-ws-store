@@ -227,7 +227,11 @@ export function createServerManagementService({
     const adminRole = await ensureRole(guild, ROLE.admin, {
       color: 0xe74c3c,
       hoist: true,
-      permissions: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ManageMessages]
+      permissions: [
+        PermissionsBitField.Flags.ManageGuild,
+        PermissionsBitField.Flags.ManageChannels,
+        PermissionsBitField.Flags.ManageMessages
+      ]
     });
     const middlemanRole = await ensureRole(guild, ROLE.middleman, { color: 0x1abc9c, hoist: true });
     const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db, hoist: false });

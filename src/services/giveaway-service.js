@@ -20,10 +20,10 @@ function missingGiveawaySchemaMessage() {
   return 'Tabel giveaway belum ada di Supabase. Jalankan isi file supabase/schema.sql di SQL Editor Supabase, lalu coba lagi.';
 }
 
-function warnMissingGiveawaySchemaOnce(error) {
+function warnMissingGiveawaySchemaOnce(error, logger) {
   if (giveawaySchemaWarningShown) return;
   giveawaySchemaWarningShown = true;
-  console.warn(`${missingGiveawaySchemaMessage()} Detail: ${error.message}`);
+  logger.warn(`${missingGiveawaySchemaMessage()} Detail: ${error.message}`);
 }
 
 export function createGiveawayFeature({
@@ -32,7 +32,8 @@ export function createGiveawayFeature({
   embedBase,
   memberIsStaff,
   channelMatchesName,
-  giveawayChannelName
+  giveawayChannelName,
+  logger = console
 }) {
   const endingGiveaways = new Set();
   const { payload: giveawayPayload } = createGiveawayPresentationService({ embedBase });
@@ -44,8 +45,8 @@ export function createGiveawayFeature({
       .eq('giveaway_id', giveawayId);
 
     if (error) {
-      if (isGiveawaySchemaMissing(error)) warnMissingGiveawaySchemaOnce(error);
-      else console.warn('Failed to count giveaway participants:', error.message);
+      if (isGiveawaySchemaMissing(error)) warnMissingGiveawaySchemaOnce(error, logger);
+      else logger.warn('Failed to count giveaway participants:', error.message);
       return 0;
     }
 
@@ -60,8 +61,8 @@ export function createGiveawayFeature({
       .maybeSingle();
 
     if (error) {
-      if (isGiveawaySchemaMissing(error)) warnMissingGiveawaySchemaOnce(error);
-      else console.warn('Failed to load giveaway message:', error.message);
+      if (isGiveawaySchemaMissing(error)) warnMissingGiveawaySchemaOnce(error, logger);
+      else logger.warn('Failed to load giveaway message:', error.message);
       return;
     }
 
@@ -84,7 +85,7 @@ export function createGiveawayFeature({
 
     if (giveawayError) {
       if (isGiveawaySchemaMissing(giveawayError)) {
-        warnMissingGiveawaySchemaOnce(giveawayError);
+        warnMissingGiveawaySchemaOnce(giveawayError, logger);
         return { giveaway: null, winners: [], schemaMissing: true };
       }
       throw giveawayError;
@@ -99,7 +100,7 @@ export function createGiveawayFeature({
 
     if (entriesError) {
       if (isGiveawaySchemaMissing(entriesError)) {
-        warnMissingGiveawaySchemaOnce(entriesError);
+        warnMissingGiveawaySchemaOnce(entriesError, logger);
         return { giveaway, winners: [], schemaMissing: true };
       }
       throw entriesError;
@@ -150,6 +151,14 @@ export function createGiveawayFeature({
     }
   }
 
+  async function rollBackGiveawayCreation(giveawayId, endedBy, context) {
+    const { error } = await supabase
+      .from('giveaways')
+      .update({ status: 'ended', ended_at: new Date().toISOString(), ended_by: endedBy })
+      .eq('id', giveawayId);
+    if (error) logger.error(`Failed to roll back giveaway ${context}:`, error.message);
+  }
+
   async function createGiveaway(interaction) {
     if (!memberIsStaff(interaction.member)) {
       await interaction.reply({ content: 'Hanya admin atau owner yang bisa membuat giveaway.', flags: MessageFlags.Ephemeral });
@@ -187,21 +196,31 @@ export function createGiveawayFeature({
 
     if (error) {
       if (isGiveawaySchemaMissing(error)) {
-        warnMissingGiveawaySchemaOnce(error);
+        warnMissingGiveawaySchemaOnce(error, logger);
         await interaction.editReply(missingGiveawaySchemaMessage());
         return;
       }
       throw error;
     }
 
-    const message = await channel.send(giveawayPayload(interaction.guild, giveaway, 0));
+    let message;
+    try {
+      message = await channel.send(giveawayPayload(interaction.guild, giveaway, 0));
+    } catch (sendError) {
+      await rollBackGiveawayCreation(giveaway.id, interaction.user.id, 'after Discord send failure');
+      throw sendError;
+    }
 
     const { error: messageUpdateError } = await supabase
       .from('giveaways')
       .update({ message_id: message.id })
       .eq('id', giveaway.id);
 
-    if (messageUpdateError) console.warn('Failed to save giveaway message id:', messageUpdateError.message);
+    if (messageUpdateError) {
+      if (message.delete) await message.delete().catch(() => null);
+      await rollBackGiveawayCreation(giveaway.id, interaction.user.id, 'without a saved message');
+      throw messageUpdateError;
+    }
 
     await interaction.editReply(`Giveaway dibuat di <#${channel.id}>.`);
   }
@@ -226,7 +245,7 @@ export function createGiveawayFeature({
 
     if (error) {
       if (isGiveawaySchemaMissing(error)) {
-        warnMissingGiveawaySchemaOnce(error);
+        warnMissingGiveawaySchemaOnce(error, logger);
         await interaction.editReply(missingGiveawaySchemaMessage());
         return;
       }
@@ -250,7 +269,7 @@ export function createGiveawayFeature({
 
     if (entryError) {
       if (isGiveawaySchemaMissing(entryError)) {
-        warnMissingGiveawaySchemaOnce(entryError);
+        warnMissingGiveawaySchemaOnce(entryError, logger);
         await interaction.editReply(missingGiveawaySchemaMessage());
         return;
       }
@@ -304,7 +323,7 @@ export function createGiveawayFeature({
 
       if (error) {
         if (isGiveawaySchemaMissing(error)) {
-          warnMissingGiveawaySchemaOnce(error);
+          warnMissingGiveawaySchemaOnce(error, logger);
           await interaction.editReply(missingGiveawaySchemaMessage());
           return;
         }
@@ -337,16 +356,16 @@ export function createGiveawayFeature({
 
     if (error) {
       if (isGiveawaySchemaMissing(error)) {
-        warnMissingGiveawaySchemaOnce(error);
+        warnMissingGiveawaySchemaOnce(error, logger);
       } else {
-        console.warn('Failed to load due giveaways:', error.message);
+        logger.warn('Failed to load due giveaways:', error.message);
       }
       return;
     }
 
     for (const giveaway of giveaways || []) {
       const guild = await client.guilds.fetch(giveaway.guild_id).catch(() => null);
-      if (guild) await endGiveaway(guild, giveaway.id).catch((itemError) => console.warn('Failed to end giveaway:', itemError.message));
+      if (guild) await endGiveaway(guild, giveaway.id).catch((itemError) => logger.warn('Failed to end giveaway:', itemError.message));
     }
   }
 

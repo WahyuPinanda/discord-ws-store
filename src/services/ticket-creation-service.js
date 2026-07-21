@@ -18,6 +18,27 @@ export function createTicketCreationFeature({
     return `${interaction.guildId}:${openerId}:${type}`;
   }
 
+  async function closeStaleTicket(ticket) {
+    const result = await supabase
+      .from('tickets')
+      .update({ status: 'closed', closed_at: new Date().toISOString() })
+      .eq('id', ticket.id);
+    unwrapSupabase(result, 'Failed to close stale ticket');
+  }
+
+  async function existingTicketChannel(guild, ticket) {
+    if (!ticket?.channel_id) return null;
+    const cached = guild.channels.cache?.get?.(ticket.channel_id);
+    if (cached) return cached;
+    if (!guild.channels.fetch) return { id: ticket.channel_id };
+    try {
+      return await guild.channels.fetch(ticket.channel_id);
+    } catch (error) {
+      if (error.code === 10003) return null;
+      throw error;
+    }
+  }
+
   async function createTicketForMemberUnlocked(interaction, type, openerMember, options) {
     const {
       additionalMembers = [],
@@ -39,7 +60,11 @@ export function createTicketCreationFeature({
       .maybeSingle();
 
     if (existingError) throw existingError;
-    if (existing?.channel_id) return { existingChannelId: existing.channel_id };
+    if (existing) {
+      const existingChannel = await existingTicketChannel(interaction.guild, existing);
+      if (existingChannel) return { existingChannelId: existing.channel_id };
+      await closeStaleTicket(existing);
+    }
 
     const { data: ticket, error: insertError } = await supabase
       .from('tickets')
