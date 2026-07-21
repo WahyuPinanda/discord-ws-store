@@ -66,7 +66,7 @@ function createTicketDbStub() {
   };
 }
 
-function createContext({ failSend = false } = {}) {
+function createContext({ failSend = false, fetchError = null } = {}) {
   const db = createTicketDbStub();
   let channelCreateCount = 0;
   let channelDeleteCount = 0;
@@ -105,6 +105,10 @@ function createContext({ failSend = false } = {}) {
             channelDeleteCount += 1;
           }
         };
+      },
+      async fetch(channelId) {
+        if (fetchError) throw fetchError;
+        return channelId === 'existing-channel' ? { id: channelId } : null;
       }
     }
   };
@@ -193,6 +197,76 @@ test('failed channel initialization rolls back the ticket record', async () => {
 
   assert.equal(context.channelDeleteCount, 1);
   assert.equal(context.db.tickets[0].status, 'closed');
+});
+
+test('stale active ticket without a Discord channel is closed and recreated', async () => {
+  const context = createContext();
+  context.db.tickets.push({
+    id: 99,
+    guild_id: 'guild-1',
+    opener_id: 'buyer-1',
+    type: 'order',
+    status: 'open',
+    channel_id: 'deleted-channel'
+  });
+
+  const result = await context.feature.createTicketForMember(
+    context.interaction,
+    'order',
+    context.openerMember,
+    { service: 'limited' }
+  );
+
+  assert.equal(context.db.tickets[0].status, 'closed');
+  assert.equal(result.channelId, 'channel-1');
+  assert.equal(context.channelCreateCount, 1);
+});
+
+test('active ticket with an existing Discord channel is reused', async () => {
+  const context = createContext();
+  context.db.tickets.push({
+    id: 99,
+    guild_id: 'guild-1',
+    opener_id: 'buyer-1',
+    type: 'order',
+    status: 'open',
+    channel_id: 'existing-channel'
+  });
+
+  const result = await context.feature.createTicketForMember(
+    context.interaction,
+    'order',
+    context.openerMember,
+    { service: 'limited' }
+  );
+
+  assert.equal(result.existingChannelId, 'existing-channel');
+  assert.equal(context.channelCreateCount, 0);
+});
+
+test('temporary Discord fetch failures do not close an active ticket', async () => {
+  const context = createContext({ fetchError: new Error('Discord gateway timeout') });
+  context.db.tickets.push({
+    id: 99,
+    guild_id: 'guild-1',
+    opener_id: 'buyer-1',
+    type: 'order',
+    status: 'open',
+    channel_id: 'uncertain-channel'
+  });
+
+  await assert.rejects(
+    context.feature.createTicketForMember(
+      context.interaction,
+      'order',
+      context.openerMember,
+      { service: 'limited' }
+    ),
+    /Discord gateway timeout/
+  );
+
+  assert.equal(context.db.tickets[0].status, 'open');
+  assert.equal(context.channelCreateCount, 0);
 });
 
 test('rekber ticket grants access and mentions both transaction parties', async () => {

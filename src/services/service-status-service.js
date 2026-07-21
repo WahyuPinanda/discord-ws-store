@@ -48,7 +48,8 @@ export function createServiceStatusFeature({
   closeHour,
   getDateKey,
   getHour,
-  isStoreOpen
+  isStoreOpen,
+  logger = console
 }) {
   const cache = new Map();
   const loadedGuilds = new Set();
@@ -129,7 +130,7 @@ export function createServiceStatusFeature({
       .eq('guild_id', guildId);
 
     if (error) {
-      console.warn('Failed to load service statuses:', error.message);
+      logger.warn('Failed to load service statuses:', error.message);
       return false;
     }
 

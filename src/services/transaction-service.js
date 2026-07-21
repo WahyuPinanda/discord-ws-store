@@ -164,6 +164,23 @@ export function createTransactionService({
     return transcript;
   }
 
+  async function rollBackFailedCustomerUpdate(ticket, transaction) {
+    const [transactionRollback, ticketRollback] = await Promise.all([
+      supabase.from('transactions').delete().eq('id', transaction.id),
+      supabase
+        .from('tickets')
+        .update({ status: ticket.status, total_amount: ticket.total_amount || 0 })
+        .eq('id', ticket.id)
+    ]);
+
+    if (transactionRollback.error) {
+      logger.error('Failed to roll back transaction after customer update failure:', transactionRollback.error.message);
+    }
+    if (ticketRollback.error) {
+      logger.error('Failed to restore ticket after customer update failure:', ticketRollback.error.message);
+    }
+  }
+
   async function completeTicketUnlocked(interaction) {
     const product = interaction.fields.getTextInputValue('product').trim();
     const amountRaw = interaction.fields.getTextInputValue('amount');
@@ -223,12 +240,19 @@ export function createTransactionService({
       throw error;
     }
 
-    const { totalSpent, tier, roleSync } = await updateCustomerAndRoles(
-      interaction.guild,
-      ticket.opener_id,
-      buyer.tag,
-      amount
-    );
+    let customerResult;
+    try {
+      customerResult = await updateCustomerAndRoles(
+        interaction.guild,
+        ticket.opener_id,
+        buyer.tag,
+        amount
+      );
+    } catch (error) {
+      await rollBackFailedCustomerUpdate(ticket, transaction);
+      throw error;
+    }
+    const { totalSpent, tier, roleSync } = customerResult;
     await postTransaction(interaction.guild, transaction, ticket.opener_id, totalSpent, tier);
     await interaction.channel.send({
       embeds: [
@@ -373,7 +397,15 @@ export function createTransactionService({
       .select('*')
       .single(), 'Failed to save manual transaction');
 
-    const { totalSpent, tier, roleSync } = await updateCustomerAndRoles(interaction.guild, buyer.id, buyer.tag, amount);
+    let customerResult;
+    try {
+      customerResult = await updateCustomerAndRoles(interaction.guild, buyer.id, buyer.tag, amount);
+    } catch (error) {
+      const rollback = await supabase.from('transactions').delete().eq('id', transaction.id);
+      if (rollback.error) logger.error('Failed to roll back manual transaction:', rollback.error.message);
+      throw error;
+    }
+    const { totalSpent, tier, roleSync } = customerResult;
     await postTransaction(interaction.guild, transaction, buyer.id, totalSpent, tier);
     await sendInvoiceDm({ user: buyer, transaction, totalSpent, tier });
     const roleWarning = roleSync.ok ? '' : ` Role gagal disinkronkan: ${roleSync.error}.`;
