@@ -391,7 +391,7 @@ export function createServerManagementService({
     await ensureTextChannel(guild, CHANNEL.giveaways, loungeCategory, publicReadOnly);
     await ensureVoiceChannel(guild, 'Room 1', loungeCategory, publicVoice);
     await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, transactionReadOnly);
-    await ensureTextChannel(guild, '🧾・rekber-history', transactionCategory, transactionReadOnly);
+    await ensureTextChannel(guild, CHANNEL.rekberHistory, transactionCategory, transactionReadOnly);
     await ensureTextChannel(guild, CHANNEL.adminLog, adminCategory);
     await ensureTextChannel(guild, CHANNEL.ticketLog, adminCategory);
     await ensureTextChannel(guild, CHANNEL.ticketTranscript, adminCategory, staffOnly);

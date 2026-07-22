@@ -249,6 +249,7 @@ const {
   customerRoleName: ROLE.customer,
   tierRoles: TIER_ROLES,
   successTransactionChannel: CHANNEL.successTransaction,
+  rekberHistoryChannel: CHANNEL.rekberHistory,
   ticketTranscriptChannel: CHANNEL.ticketTranscript,
   ticketLogChannel: CHANNEL.ticketLog,
   embedBase,

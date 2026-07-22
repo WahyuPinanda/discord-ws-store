@@ -151,6 +151,7 @@ export const CHANNEL = {
   socialMedia: '📱・social-media',
   giveaways: '🎉・giveaways',
   successTransaction: '✅・success-transaction',
+  rekberHistory: '🧾・rekber-history',
   ticketTranscript: '📜・ticket-transcript',
   adminLog: '📋・admin-log',
   ticketLog: '🎫・ticket-log',
