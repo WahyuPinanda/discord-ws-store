@@ -234,17 +234,17 @@ export function createServerManagementService({
       ]
     });
     const middlemanRole = await ensureRole(guild, ROLE.middleman, { color: 0x1abc9c, hoist: true });
-    const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db, hoist: false });
+    const rolimonsBotRole = await ensureRole(guild, ROLE.rolimonsBot, { color: 0x3498db, hoist: true });
     const notifyMeRole = findNotifyMeRole(guild);
     await ensureRole(guild, ROLE.creator, { color: 0x9b59b6, hoist: true });
     await ensureRole(guild, ROLE.booster, { color: 0xff73fa, hoist: true });
-    const customerRole = await ensureRole(guild, ROLE.customer, { color: 0x2ecc71, hoist: false });
+    const customerRole = await ensureRole(guild, ROLE.customer, { color: 0x2ecc71, hoist: true });
     const clientRole = await ensureRole(guild, ROLE.client, {
       color: 0x3498db,
-      hoist: false,
+      hoist: true,
       aliases: VERIFIED_ROLE_ALIASES
     });
-    const unverifiedRole = await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d, hoist: false });
+    const unverifiedRole = await ensureRole(guild, ROLE.unverified, { color: 0x7f8c8d, hoist: true });
     const tierRoles = [];
     for (const tier of TIER_ROLES) {
       tierRoles.push(await ensureRole(guild, tier.name, {
@@ -391,7 +391,7 @@ export function createServerManagementService({
     await ensureTextChannel(guild, CHANNEL.giveaways, loungeCategory, publicReadOnly);
     await ensureVoiceChannel(guild, 'Room 1', loungeCategory, publicVoice);
     await ensureTextChannel(guild, CHANNEL.successTransaction, transactionCategory, transactionReadOnly);
-    await ensureTextChannel(guild, '🧾・rekber-history', transactionCategory, transactionReadOnly);
+    await ensureTextChannel(guild, CHANNEL.rekberHistory, transactionCategory, transactionReadOnly);
     await ensureTextChannel(guild, CHANNEL.adminLog, adminCategory);
     await ensureTextChannel(guild, CHANNEL.ticketLog, adminCategory);
     await ensureTextChannel(guild, CHANNEL.ticketTranscript, adminCategory, staffOnly);

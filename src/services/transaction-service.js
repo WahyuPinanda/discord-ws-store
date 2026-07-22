@@ -6,6 +6,7 @@ import {
   TextInputStyle
 } from 'discord.js';
 import { createCustomerService } from './customer-service.js';
+import { createTransactionNotificationService } from './transaction-notification-service.js';
 import { createTranscriptService } from './transcript-service.js';
 
 export function createTransactionService({
@@ -15,6 +16,7 @@ export function createTransactionService({
   customerRoleName,
   tierRoles,
   successTransactionChannel,
+  rekberHistoryChannel,
   ticketTranscriptChannel,
   ticketLogChannel,
   embedBase,
@@ -40,6 +42,14 @@ export function createTransactionService({
     channelMatchesName,
     ticketTranscriptChannel,
     ticketLogChannel
+  });
+  const { postTransaction } = createTransactionNotificationService({
+    successTransactionChannel,
+    rekberHistoryChannel,
+    embedBase,
+    formatRupiah,
+    channelMatchesName,
+    logger
   });
 
   async function showCompleteModal(interaction) {
@@ -110,29 +120,6 @@ export function createTransactionService({
           .setTimestamp(new Date(transaction.created_at))
       ]
     }).catch(() => null);
-  }
-
-  async function postTransaction(guild, transaction, buyerId, totalSpent, tier) {
-    const channel = guild.channels.cache.find((item) => channelMatchesName(item, successTransactionChannel));
-    if (!channel) return;
-
-    await channel.send({
-      embeds: [
-        embedBase()
-          .setTitle('✅ TRANSACTION SUCCESS')
-          .setDescription('Order berhasil diselesaikan dan tercatat otomatis.')
-          .addFields(
-            { name: 'Buyer', value: `<@${buyerId}>`, inline: true },
-            { name: 'Product', value: transaction.product, inline: true },
-            { name: 'Nominal', value: formatRupiah(transaction.amount), inline: true },
-            { name: 'Payment', value: transaction.payment_method, inline: true },
-            { name: 'Handled by', value: transaction.handled_by ? `<@${transaction.handled_by}>` : '-', inline: true },
-            { name: 'Customer Total', value: formatRupiah(totalSpent), inline: true },
-            { name: 'Tier', value: tier?.name || 'Customer', inline: true }
-          )
-          .setTimestamp(new Date(transaction.created_at))
-      ]
-    });
   }
 
   async function closeTicketChannel(channel, ticket, closedBy, options = {}) {
@@ -253,7 +240,7 @@ export function createTransactionService({
       throw error;
     }
     const { totalSpent, tier, roleSync } = customerResult;
-    await postTransaction(interaction.guild, transaction, ticket.opener_id, totalSpent, tier);
+    await postTransaction(interaction.guild, transaction, ticket.opener_id, totalSpent, tier, ticket.type);
     await interaction.channel.send({
       embeds: [
         embedBase()

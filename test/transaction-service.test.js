@@ -12,6 +12,7 @@ function createService(overrides = {}) {
     customerRoleName: 'Customer',
     tierRoles: [],
     successTransactionChannel: 'success',
+    rekberHistoryChannel: 'rekber-history',
     ticketTranscriptChannel: 'transcript',
     ticketLogChannel: 'ticket-log',
     embedBase: () => ({}),
